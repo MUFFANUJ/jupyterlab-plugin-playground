@@ -1,4 +1,4 @@
-import { expect, test } from '@jupyterlab/galata';
+import { expect, galata, test } from '@jupyterlab/galata';
 import type { FileEditorWidget } from '@jupyterlab/fileeditor';
 import type { IJupyterLabPageFixture } from '@jupyterlab/galata';
 import type { Locator } from '@playwright/test';
@@ -6,6 +6,7 @@ import type { Locator } from '@playwright/test';
 const LOAD_COMMAND = 'plugin-playground:load-as-extension';
 const INTERNAL_CONTEXT_INFO_COMMAND = '__internal:context-menu-info';
 const CREATE_FILE_COMMAND = 'plugin-playground:create-new-plugin';
+const PLAYGROUND_PLUGIN_ID = '@jupyterlab/plugin-playground:plugin';
 const TEST_PLUGIN_ID = 'playground-integration-test:plugin';
 const TEST_TOGGLE_COMMAND = 'playground-integration-test:toggle';
 const TEST_FILE = 'playground-integration-test.ts';
@@ -14,6 +15,7 @@ const INVOKE_FILE_COMPLETER_COMMAND = 'completer:invoke-file';
 const PLAYGROUND_SIDEBAR_ID = 'jp-plugin-playground-sidebar';
 const TOKEN_SECTION_ID = 'jp-plugin-token-sidebar';
 const EXAMPLE_SECTION_ID = 'jp-plugin-example-sidebar';
+const LOAD_ON_SAVE_CHECKBOX_LABEL = 'Auto Load on Save';
 
 test.use({ autoGoto: false });
 
@@ -76,6 +78,23 @@ async function findImportableToken(panel: Locator): Promise<string> {
     }
   }
   throw new Error('No importable token found in token sidebar');
+}
+
+async function findLoadOnSaveCheckbox(
+  page: IJupyterLabPageFixture
+): Promise<Locator> {
+  const checkbox = page.getByRole('checkbox', {
+    name: LOAD_ON_SAVE_CHECKBOX_LABEL
+  });
+  await expect(checkbox).toBeVisible();
+  return checkbox;
+}
+
+async function focusActiveEditor(page: IJupyterLabPageFixture): Promise<void> {
+  await page.evaluate(() => {
+    const current = window.jupyterapp.shell.currentWidget as FileEditorWidget;
+    current.content.editor.focus();
+  });
 }
 
 test('registers plugin playground commands', async ({ page }) => {
@@ -343,9 +362,73 @@ test('commands tab lists and filters available commands', async ({ page }) => {
   ]);
   await expect(panel.getByText('Load Current File As Extension')).toBeVisible();
 
+  const loadCommandArgumentsButton = panel.locator(
+    '.jp-PluginPlayground-argumentBadgeButton'
+  );
+  await expect(
+    loadCommandArgumentsButton.locator(
+      '.jp-PluginPlayground-argumentCountBadge'
+    )
+  ).toHaveText('?');
+  await expect(loadCommandArgumentsButton).toBeDisabled();
+  await expect(loadCommandArgumentsButton).toHaveAttribute(
+    'title',
+    'Argument documentation unavailable'
+  );
+
   await filterInput.fill(INTERNAL_CONTEXT_INFO_COMMAND);
   await expect(panel.locator('.jp-PluginPlayground-listItem')).toHaveCount(0);
   await expect(panel.getByText('No matching commands.')).toBeVisible();
+
+  const commandWithArgumentDocs = await page.evaluate(async () => {
+    const commands = window.jupyterapp.commands;
+    const commandIds = commands
+      .listCommands()
+      .filter(id => !id.startsWith('__internal:'));
+
+    for (const id of commandIds) {
+      let usage = '';
+      try {
+        usage = commands.usage(id).trim();
+      } catch {
+        usage = '';
+      }
+
+      try {
+        const description = await commands.describedBy(id);
+        const args = description.args;
+        if (usage || (args && Object.keys(args).length > 0)) {
+          return id;
+        }
+      } catch {
+        if (usage) {
+          return id;
+        }
+      }
+    }
+
+    return null;
+  });
+  expect(commandWithArgumentDocs).toBeTruthy();
+  await filterInput.fill(commandWithArgumentDocs ?? '');
+  await expect(panel.locator('.jp-PluginPlayground-listItem')).toHaveCount(1);
+
+  const showArgsButton = panel.getByRole('button', {
+    name: `Show argument documentation for ${commandWithArgumentDocs}`
+  });
+  await expect(showArgsButton).toBeEnabled();
+  await showArgsButton.click();
+  await expect(
+    panel.getByRole('button', {
+      name: `Hide argument documentation for ${commandWithArgumentDocs}`
+    })
+  ).toHaveAttribute('aria-expanded', 'true');
+
+  const argumentsPanel = panel.locator('.jp-PluginPlayground-commandArguments');
+  await expect(argumentsPanel).toBeVisible();
+  await expect(
+    panel.locator('.jp-PluginPlayground-commandArgumentsText')
+  ).toContainText(/(Usage:|Arguments Schema:)/);
 });
 
 test('command completer suggests command ids inside execute calls', async ({
@@ -406,4 +489,132 @@ const run = (application: JupyterFrontEnd) => {
     const source = current.content.model.sharedModel.getSource();
     return source.includes(`application.commands.execute('${expected}')`);
   }, LOAD_COMMAND);
+});
+
+test('per-file load-on-save checkbox is unchecked by default and enables auto-load', async ({
+  page,
+  tmpPath
+}) => {
+  const pluginPath = `${tmpPath}/${TEST_FILE}`;
+
+  await page.contents.uploadContent(TEST_PLUGIN_SOURCE, 'text', pluginPath);
+  await page.goto();
+  await page.waitForCondition(() =>
+    page.evaluate((id: string) => {
+      return window.jupyterapp.commands.hasCommand(id);
+    }, LOAD_COMMAND)
+  );
+
+  await page.filebrowser.open(pluginPath);
+  expect(await page.activity.activateTab(TEST_FILE)).toBe(true);
+
+  const loadOnSaveCheckbox = await findLoadOnSaveCheckbox(page);
+  await expect(loadOnSaveCheckbox).not.toBeChecked();
+  await loadOnSaveCheckbox.check();
+  await expect(loadOnSaveCheckbox).toBeChecked();
+
+  await focusActiveEditor(page);
+  await page.keyboard.press('Space');
+  await page.keyboard.press('Backspace');
+  await page.evaluate(() => {
+    return window.jupyterapp.commands.execute('docmanager:save');
+  });
+
+  await page.waitForCondition(() =>
+    page.evaluate((id: string) => {
+      return window.jupyterapp.hasPlugin(id);
+    }, TEST_PLUGIN_ID)
+  );
+  await page.waitForCondition(() =>
+    page.evaluate((id: string) => {
+      return window.jupyterapp.commands.hasCommand(id);
+    }, TEST_TOGGLE_COMMAND)
+  );
+});
+
+test.describe('load-on-save setting', () => {
+  test.use({
+    mockSettings: {
+      ...galata.DEFAULT_SETTINGS,
+      [PLAYGROUND_PLUGIN_ID]: {
+        loadOnSave: true
+      }
+    }
+  });
+
+  test('auto-loads plugin when loadOnSave setting is enabled and file is saved', async ({
+    page,
+    tmpPath
+  }) => {
+    const pluginPath = `${tmpPath}/${TEST_FILE}`;
+
+    await page.contents.uploadContent(TEST_PLUGIN_SOURCE, 'text', pluginPath);
+    await page.goto();
+
+    await page.waitForCondition(() =>
+      page.evaluate((id: string) => {
+        return window.jupyterapp.commands.hasCommand(id);
+      }, LOAD_COMMAND)
+    );
+
+    await page.filebrowser.open(pluginPath);
+    expect(await page.activity.activateTab(TEST_FILE)).toBe(true);
+    const loadOnSaveCheckbox = page.getByRole('checkbox', {
+      name: LOAD_ON_SAVE_CHECKBOX_LABEL,
+      includeHidden: true
+    });
+    await expect(loadOnSaveCheckbox).toBeAttached();
+    await expect(loadOnSaveCheckbox).toBeHidden();
+
+    // Make the editor dirty so save reliably emits a completed saveState.
+    await focusActiveEditor(page);
+    await page.keyboard.press('Space');
+    await page.keyboard.press('Backspace');
+
+    await page.evaluate(() => {
+      return window.jupyterapp.commands.execute('docmanager:save');
+    });
+
+    await page.waitForCondition(() =>
+      page.evaluate((id: string) => {
+        return window.jupyterapp.hasPlugin(id);
+      }, TEST_PLUGIN_ID)
+    );
+
+    await page.waitForCondition(() =>
+      page.evaluate((id: string) => {
+        return window.jupyterapp.commands.hasCommand(id);
+      }, TEST_TOGGLE_COMMAND)
+    );
+
+    const initiallyToggled = await page.evaluate((id: string) => {
+      return window.jupyterapp.commands.isToggled(id);
+    }, TEST_TOGGLE_COMMAND);
+    expect(initiallyToggled).toBe(false);
+  });
+
+  test('hides file-level load-on-save checkbox when setting is enabled', async ({
+    page,
+    tmpPath
+  }) => {
+    const pluginPath = `${tmpPath}/${TEST_FILE}`;
+
+    await page.contents.uploadContent(TEST_PLUGIN_SOURCE, 'text', pluginPath);
+    await page.goto();
+    await page.waitForCondition(() =>
+      page.evaluate((id: string) => {
+        return window.jupyterapp.commands.hasCommand(id);
+      }, LOAD_COMMAND)
+    );
+
+    await page.filebrowser.open(pluginPath);
+    expect(await page.activity.activateTab(TEST_FILE)).toBe(true);
+
+    const loadOnSaveCheckbox = page.getByRole('checkbox', {
+      name: LOAD_ON_SAVE_CHECKBOX_LABEL,
+      includeHidden: true
+    });
+    await expect(loadOnSaveCheckbox).toBeAttached();
+    await expect(loadOnSaveCheckbox).toBeHidden();
+  });
 });
