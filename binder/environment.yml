@@ -23,6 +23,7 @@ dependencies:
   - jupyterlab-js-logs>=1,<2
   # install stable Jupyter AI on Binder; move to v3 when it is released
   - pip:
-      - jupyter-ai>=2,<3
+      - jupyter-ai==3.0.0b9 #currently using Jupyter AI v3 pre-release
+      - jupyter-ai-jupyternaut==0.0.10
       # expose command discovery/execution tools via MCP for AI assistants
       - jupyterlab_commands_toolkit[mcp]>=0.1,<1

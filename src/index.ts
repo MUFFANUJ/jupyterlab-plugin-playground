@@ -127,6 +127,17 @@ interface IPrivatePluginData {
 }
 
 const EXTENSION_EXAMPLES_ROOT = 'extension-examples';
+const LIST_QUERY_ARGS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    query: {
+      type: 'string',
+      description:
+        'Optional filter text. Matches records case-insensitively by id/name/description.'
+    }
+  }
+};
 const LOAD_ON_SAVE_TOGGLE_TOOLBAR_ITEM = 'plugin-playground-load-on-save';
 const LOAD_ON_SAVE_CHECKBOX_LABEL = 'Auto Load on Save';
 const LOAD_ON_SAVE_SETTING = 'loadOnSave';
@@ -227,7 +238,8 @@ class PluginPlayground {
 
     app.commands.addCommand(CommandIDs.listTokens, {
       label: 'List Extension Tokens (Playground)',
-      caption: 'List available token strings. Optional args: { query: string }',
+      caption: 'List available token strings',
+      describedBy: { args: LIST_QUERY_ARGS_SCHEMA },
       execute: args => {
         const query = typeof args.query === 'string' ? args.query.trim() : '';
         const tokens = this._getTokenRecords();
@@ -243,7 +255,8 @@ class PluginPlayground {
 
     app.commands.addCommand(CommandIDs.listCommands, {
       label: 'List Extension Commands (Playground)',
-      caption: 'List available command IDs. Optional args: { query: string }',
+      caption: 'List available command IDs',
+      describedBy: { args: LIST_QUERY_ARGS_SCHEMA },
       execute: args => {
         const query = typeof args.query === 'string' ? args.query.trim() : '';
         const commands = getCommandRecords(this.app);
@@ -259,8 +272,8 @@ class PluginPlayground {
 
     app.commands.addCommand(CommandIDs.listExtensionExamples, {
       label: 'List Extension Examples (Playground)',
-      caption:
-        'List available extension examples. Optional args: { query: string }',
+      caption: 'List available extension examples',
+      describedBy: { args: LIST_QUERY_ARGS_SCHEMA },
       execute: async args => {
         const query = typeof args.query === 'string' ? args.query.trim() : '';
         const examples = await this._discoverExtensionExamples();
