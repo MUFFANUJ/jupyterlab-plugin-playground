@@ -24,3 +24,5 @@ dependencies:
   # install stable Jupyter AI on Binder; move to v3 when it is released
   - pip:
       - jupyter-ai>=2,<3
+      # expose command discovery/execution tools via MCP for AI assistants
+      - jupyterlab_commands_toolkit[mcp]>=0.1,<1

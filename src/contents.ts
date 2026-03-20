@@ -15,6 +15,10 @@ export function normalizeContentsPath(path: string | null | undefined): string {
   return (path ?? '').replace(/^\/+/g, '');
 }
 
+export function normalizeQuery(query: string): string {
+  return query.trim().toLowerCase();
+}
+
 export function contentsPathCandidates(path: string): string[] {
   // Jupyter Server and JupyterLite do not always agree on whether contents
   // paths should be rooted. Try both forms so callers can use one code path.

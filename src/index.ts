@@ -42,9 +42,13 @@ import { ImportResolver } from './resolver';
 
 import { IRequireJS, RequireJSLoader } from './requirejs';
 
-import { TokenSidebar } from './token-sidebar';
+import {
+  filterCommandRecords,
+  filterTokenRecords,
+  TokenSidebar
+} from './token-sidebar';
 
-import { ExampleSidebar } from './example-sidebar';
+import { ExampleSidebar, filterExampleRecords } from './example-sidebar';
 
 import { tokenSidebarIcon } from './icons';
 
@@ -72,6 +76,10 @@ import { IPlugin } from '@lumino/application';
 namespace CommandIDs {
   export const createNewFile = 'plugin-playground:create-new-plugin';
   export const loadCurrentAsExtension = 'plugin-playground:load-as-extension';
+  export const listTokens = 'plugin-playground:list-tokens';
+  export const listCommands = 'plugin-playground:list-commands';
+  export const listExtensionExamples =
+    'plugin-playground:list-extension-examples';
 }
 
 const PLUGIN_TEMPLATE = `import {
@@ -217,18 +225,61 @@ class PluginPlayground {
       }
     });
 
+    app.commands.addCommand(CommandIDs.listTokens, {
+      label: 'List Extension Tokens (Playground)',
+      caption: 'List available token strings. Optional args: { query: string }',
+      execute: args => {
+        const query = typeof args.query === 'string' ? args.query.trim() : '';
+        const tokens = this._getTokenRecords();
+        const items = filterTokenRecords(tokens, query);
+        return {
+          query,
+          total: tokens.length,
+          count: items.length,
+          items: [...items]
+        };
+      }
+    });
+
+    app.commands.addCommand(CommandIDs.listCommands, {
+      label: 'List Extension Commands (Playground)',
+      caption: 'List available command IDs. Optional args: { query: string }',
+      execute: args => {
+        const query = typeof args.query === 'string' ? args.query.trim() : '';
+        const commands = getCommandRecords(this.app);
+        const items = filterCommandRecords(commands, query);
+        return {
+          query,
+          total: commands.length,
+          count: items.length,
+          items: [...items]
+        };
+      }
+    });
+
+    app.commands.addCommand(CommandIDs.listExtensionExamples, {
+      label: 'List Extension Examples (Playground)',
+      caption:
+        'List available extension examples. Optional args: { query: string }',
+      execute: async args => {
+        const query = typeof args.query === 'string' ? args.query.trim() : '';
+        const examples = await this._discoverExtensionExamples();
+        const items = filterExampleRecords(examples, query);
+        return {
+          query,
+          total: examples.length,
+          count: items.length,
+          items: [...items]
+        };
+      }
+    });
+
     app.restored.then(async () => {
       const settings = this.settings;
       this._updateSettings(requirejs, settings);
       this._refreshExtensionPoints();
       const tokenSidebar = new TokenSidebar({
-        getTokens: () =>
-          Array.from(this._tokenMap.keys())
-            .sort((left, right) => left.localeCompare(right))
-            .map(name => ({
-              name,
-              description: this._tokenDescriptionMap.get(name) ?? ''
-            })),
+        getTokens: this._getTokenRecords.bind(this),
         getCommands: () => getCommandRecords(this.app),
         getCommandArguments: commandId =>
           getCommandArgumentDocumentation(this.app, commandId),
@@ -446,6 +497,25 @@ class PluginPlayground {
     requirejs.require.config({
       baseUrl: baseURL
     });
+  }
+
+  private _getTokenRecords(): ReadonlyArray<TokenSidebar.ITokenRecord> {
+    if (this._tokenMap.size === 0) {
+      try {
+        this._populateTokenMap();
+      } catch (error) {
+        console.warn(
+          'Failed to discover token names for listing extension points',
+          error
+        );
+      }
+    }
+    return Array.from(this._tokenMap.keys())
+      .sort((left, right) => left.localeCompare(right))
+      .map(name => ({
+        name,
+        description: this._tokenDescriptionMap.get(name) ?? ''
+      }));
   }
 
   private async _loadPlugin(code: string, path: string | null) {

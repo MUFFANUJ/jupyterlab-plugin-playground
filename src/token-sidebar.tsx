@@ -9,11 +9,12 @@ import { addIcon, checkIcon, copyIcon } from '@jupyterlab/ui-components';
 
 import * as React from 'react';
 
-import {
-  type ICommandArgumentDocumentation,
-  formatCommandDescription,
-  type ICommandRecord
+import { formatCommandDescription } from './command-completion';
+import type {
+  ICommandArgumentDocumentation,
+  ICommandRecord
 } from './command-completion';
+import { normalizeQuery } from './contents';
 
 export namespace TokenSidebar {
   export interface ITokenRecord {
@@ -35,6 +36,37 @@ export namespace TokenSidebar {
 
 type ExtensionPointView = 'tokens' | 'commands';
 const EXTENSION_POINT_PANEL_ID = 'jp-PluginPlayground-extensionPointPanel';
+
+export function filterTokenRecords(
+  tokens: ReadonlyArray<TokenSidebar.ITokenRecord>,
+  query: string
+): ReadonlyArray<TokenSidebar.ITokenRecord> {
+  const normalizedQuery = normalizeQuery(query);
+  if (!normalizedQuery) {
+    return tokens;
+  }
+  return tokens.filter(
+    token =>
+      token.name.toLowerCase().includes(normalizedQuery) ||
+      token.description.toLowerCase().includes(normalizedQuery)
+  );
+}
+
+export function filterCommandRecords(
+  commands: ReadonlyArray<ICommandRecord>,
+  query: string
+): ReadonlyArray<ICommandRecord> {
+  const normalizedQuery = normalizeQuery(query);
+  if (!normalizedQuery) {
+    return commands;
+  }
+  return commands.filter(
+    command =>
+      command.id.toLowerCase().includes(normalizedQuery) ||
+      command.label.toLowerCase().includes(normalizedQuery) ||
+      command.caption.toLowerCase().includes(normalizedQuery)
+  );
+}
 
 export class TokenSidebar extends ReactWidget {
   private readonly _getTokens: () => ReadonlyArray<TokenSidebar.ITokenRecord>;
@@ -80,7 +112,6 @@ export class TokenSidebar extends ReactWidget {
   }
 
   render(): JSX.Element {
-    const query = this._query.trim().toLowerCase();
     const isTokenView = this._activeView === 'tokens';
     const activeTabId = `jp-PluginPlayground-extensionPointTab-${this._activeView}`;
     let tokens: ReadonlyArray<TokenSidebar.ITokenRecord> = [];
@@ -90,25 +121,10 @@ export class TokenSidebar extends ReactWidget {
 
     if (isTokenView) {
       tokens = this._getTokens();
-      filteredTokens =
-        query.length > 0
-          ? tokens.filter(
-              token =>
-                token.name.toLowerCase().includes(query) ||
-                token.description.toLowerCase().includes(query)
-            )
-          : tokens;
+      filteredTokens = filterTokenRecords(tokens, this._query);
     } else {
       commands = this._getCommands();
-      filteredCommands =
-        query.length > 0
-          ? commands.filter(
-              command =>
-                command.id.toLowerCase().includes(query) ||
-                command.label.toLowerCase().includes(query) ||
-                command.caption.toLowerCase().includes(query)
-            )
-          : commands;
+      filteredCommands = filterCommandRecords(commands, this._query);
     }
 
     const itemCount = isTokenView

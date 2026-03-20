@@ -5,6 +5,7 @@ import { codeIcon, markdownIcon } from '@jupyterlab/ui-components';
 import * as React from 'react';
 
 import { Message } from '@lumino/messaging';
+import { normalizeQuery } from './contents';
 
 export namespace ExampleSidebar {
   export interface IExampleRecord {
@@ -19,6 +20,22 @@ export namespace ExampleSidebar {
     onOpenExample: (examplePath: string) => Promise<void> | void;
     onOpenReadme: (readmePath: string) => Promise<void> | void;
   }
+}
+
+export function filterExampleRecords(
+  examples: ReadonlyArray<ExampleSidebar.IExampleRecord>,
+  query: string
+): ReadonlyArray<ExampleSidebar.IExampleRecord> {
+  const normalizedQuery = normalizeQuery(query);
+  if (!normalizedQuery) {
+    return examples;
+  }
+  return examples.filter(example => {
+    return (
+      example.name.toLowerCase().includes(normalizedQuery) ||
+      example.description.toLowerCase().includes(normalizedQuery)
+    );
+  });
 }
 
 export class ExampleSidebar extends ReactWidget {
@@ -37,16 +54,7 @@ export class ExampleSidebar extends ReactWidget {
   }
 
   render(): JSX.Element {
-    const query = this._query.trim().toLowerCase();
-    const filteredExamples =
-      query.length > 0
-        ? this._examples.filter(example => {
-            return (
-              example.name.toLowerCase().includes(query) ||
-              example.description.toLowerCase().includes(query)
-            );
-          })
-        : this._examples;
+    const filteredExamples = filterExampleRecords(this._examples, this._query);
 
     return (
       <div className="jp-PluginPlayground-sidebarInner jp-PluginPlayground-exampleSidebarInner">

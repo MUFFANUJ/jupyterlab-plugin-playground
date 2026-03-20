@@ -7,6 +7,9 @@ const LOAD_COMMAND = 'plugin-playground:load-as-extension';
 const INTERNAL_CONTEXT_INFO_COMMAND = '__internal:context-menu-info';
 const CREATE_FILE_COMMAND = 'plugin-playground:create-new-plugin';
 const PLAYGROUND_PLUGIN_ID = '@jupyterlab/plugin-playground:plugin';
+const LIST_TOKENS_COMMAND = 'plugin-playground:list-tokens';
+const LIST_COMMANDS_COMMAND = 'plugin-playground:list-commands';
+const LIST_EXAMPLES_COMMAND = 'plugin-playground:list-extension-examples';
 const TEST_PLUGIN_ID = 'playground-integration-test:plugin';
 const TEST_TOGGLE_COMMAND = 'playground-integration-test:toggle';
 const TEST_FILE = 'playground-integration-test.ts';
@@ -111,6 +114,21 @@ test('registers plugin playground commands', async ({ page }) => {
       return window.jupyterapp.commands.hasCommand(id);
     }, CREATE_FILE_COMMAND)
   );
+  await page.waitForCondition(() =>
+    page.evaluate((id: string) => {
+      return window.jupyterapp.commands.hasCommand(id);
+    }, LIST_TOKENS_COMMAND)
+  );
+  await page.waitForCondition(() =>
+    page.evaluate((id: string) => {
+      return window.jupyterapp.commands.hasCommand(id);
+    }, LIST_COMMANDS_COMMAND)
+  );
+  await page.waitForCondition(() =>
+    page.evaluate((id: string) => {
+      return window.jupyterapp.commands.hasCommand(id);
+    }, LIST_EXAMPLES_COMMAND)
+  );
 
   await expect(
     page.evaluate((id: string) => {
@@ -122,6 +140,21 @@ test('registers plugin playground commands', async ({ page }) => {
     page.evaluate((id: string) => {
       return window.jupyterapp.commands.hasCommand(id);
     }, CREATE_FILE_COMMAND)
+  ).resolves.toBe(true);
+  await expect(
+    page.evaluate((id: string) => {
+      return window.jupyterapp.commands.hasCommand(id);
+    }, LIST_TOKENS_COMMAND)
+  ).resolves.toBe(true);
+  await expect(
+    page.evaluate((id: string) => {
+      return window.jupyterapp.commands.hasCommand(id);
+    }, LIST_COMMANDS_COMMAND)
+  ).resolves.toBe(true);
+  await expect(
+    page.evaluate((id: string) => {
+      return window.jupyterapp.commands.hasCommand(id);
+    }, LIST_EXAMPLES_COMMAND)
   ).resolves.toBe(true);
 });
 
@@ -155,6 +188,18 @@ test('opens a dummy extension example from the sidebar', async ({ page }) => {
   );
 
   await page.goto();
+  const examplesResult = await page.evaluate(
+    ({ id, query }) => {
+      return window.jupyterapp.commands.execute(id, { query });
+    },
+    {
+      id: LIST_EXAMPLES_COMMAND,
+      query: integrationExampleName
+    }
+  );
+  expect(examplesResult.count).toBe(1);
+  expect(examplesResult.items[0].path).toBe(expectedPath);
+
   const section = await openSidebarPanel(page, EXAMPLE_SECTION_ID);
 
   const filterInput = section.getByPlaceholder('Filter extension examples');
@@ -188,6 +233,35 @@ test('opens a dummy extension example from the sidebar', async ({ page }) => {
     const path = current?.context?.path;
     return path === pathToOpen;
   }, expectedReadmePath);
+});
+
+test('lists tokens and searches commands via command APIs', async ({
+  page
+}) => {
+  await page.goto();
+
+  const tokensResult = await page.evaluate((id: string) => {
+    return window.jupyterapp.commands.execute(id);
+  }, LIST_TOKENS_COMMAND);
+  expect(tokensResult.count).toBeGreaterThan(0);
+  expect(tokensResult.total).toBeGreaterThan(0);
+  expect(typeof tokensResult.items[0].name).toBe('string');
+
+  const commandsResult = await page.evaluate(
+    ({ id, query }) => {
+      return window.jupyterapp.commands.execute(id, { query });
+    },
+    {
+      id: LIST_COMMANDS_COMMAND,
+      query: LOAD_COMMAND
+    }
+  );
+  expect(commandsResult.count).toBeGreaterThan(0);
+  expect(
+    commandsResult.items.some(
+      (item: { id: string }) => item.id === LOAD_COMMAND
+    )
+  ).toBe(true);
 });
 
 test('loads current editor file as a plugin extension', async ({

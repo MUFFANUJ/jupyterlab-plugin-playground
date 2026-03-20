@@ -135,6 +135,30 @@ Plugin Playground supports AI-assisted extension prototyping in both JupyterLite
 
 - [JupyterLite AI documentation](https://jupyterlite-ai.readthedocs.io/en/latest/)
 - [Jupyter AI user documentation](https://jupyter-ai.readthedocs.io/en/latest/users/index.html)
+- [Plugin authoring skill for agents](skills/plugin-authoring/SKILL.md)
+
+### Commands for AI Agents and Automation
+
+Plugin Playground now exposes command APIs that mirror sidebar data and support optional `query` filtering:
+
+- `plugin-playground:list-tokens`
+- `plugin-playground:list-commands`
+- `plugin-playground:list-extension-examples`
+
+Example:
+
+```typescript
+await app.commands.execute('plugin-playground:list-tokens', {
+  query: 'notebook'
+});
+```
+
+Each command returns a JSON object with:
+
+- `query`: the filter text that was applied
+- `total`: total number of available records
+- `count`: number of records returned after filtering
+- `items`: matching records
 
 ## Advanced Settings
 
