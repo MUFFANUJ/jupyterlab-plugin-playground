@@ -200,6 +200,17 @@
   white-space: nowrap;
 }
 
+@container (max-width: 380px) {
+  .jp-PluginPlayground-packageActions .jp-PluginPlayground-actionLabel {
+    display: none;
+  }
+
+  .jp-PluginPlayground-packageActions .jp-PluginPlayground-actionButton {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+}
+
 @container (max-width: 300px) {
   .jp-PluginPlayground-actionLabel {
     display: none;
@@ -239,6 +250,11 @@
 
 .jp-PluginPlayground-tokenString {
   font-family: var(--jp-code-font-family);
+}
+
+.jp-PluginPlayground-packageName {
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .jp-PluginPlayground-exampleError {

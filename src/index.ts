@@ -139,7 +139,7 @@ const LOAD_ON_SAVE_DISABLED_DESCRIPTION =
   'Auto load on save is available for JavaScript and TypeScript files';
 
 export interface IPluginPlayground {
-  registerKnownModule(known: IKnownModule): void;
+  registerKnownModule(known: IKnownModule): Promise<void>;
 }
 
 export const IPluginPlayground = new Token<IPluginPlayground>(
@@ -611,7 +611,7 @@ class PluginPlayground {
     this._tokenSidebar?.update();
   }
 
-  public registerKnownModule(known: IKnownModule): void {
+  public async registerKnownModule(known: IKnownModule): Promise<void> {
     registerKnownModule(known);
     this._tokenSidebar?.update();
   }
@@ -1323,9 +1323,9 @@ const plugin: JupyterFrontEndPlugin<IPluginPlayground> = {
 
     let playground: PluginPlayground | null = null;
     const api: IPluginPlayground = {
-      registerKnownModule: (known: IKnownModule) => {
+      registerKnownModule: async (known: IKnownModule) => {
         if (playground) {
-          playground.registerKnownModule(known);
+          await playground.registerKnownModule(known);
           return;
         }
         registerKnownModule(known);

@@ -441,10 +441,19 @@ export class TokenSidebar extends ReactWidget {
                 return (
                   <li key={known.name} className="jp-PluginPlayground-listItem">
                     <div className="jp-PluginPlayground-row">
-                      <code className="jp-PluginPlayground-entryLabel jp-PluginPlayground-tokenString">
-                        {known.name}
+                      <code className="jp-PluginPlayground-entryLabel jp-PluginPlayground-tokenString jp-PluginPlayground-packageName">
+                        {known.name.split('/').map((part, index) => (
+                          <React.Fragment key={`${known.name}:${index}`}>
+                            {index > 0 ? (
+                              <>
+                                /<wbr />
+                              </>
+                            ) : null}
+                            {part}
+                          </React.Fragment>
+                        ))}
                       </code>
-                      <div className="jp-PluginPlayground-tokenActions">
+                      <div className="jp-PluginPlayground-tokenActions jp-PluginPlayground-packageActions">
                         {links.map(link => (
                           <button
                             key={`${known.name}:${link.label}`}
