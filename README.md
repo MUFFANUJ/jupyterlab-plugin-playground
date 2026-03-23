@@ -134,7 +134,7 @@ Plugin Playground supports AI-assisted extension prototyping in both JupyterLite
 ### Provider Setup Help
 
 - [JupyterLite AI documentation](https://jupyterlite-ai.readthedocs.io/en/latest/)
-- [Plugin authoring skill for agents](skills/plugin-authoring/SKILL.md)
+- [Plugin authoring skill for agents](_agents/skills/plugin-authoring/SKILL.md)
 
 ### Commands for AI Agents and Automation
 
