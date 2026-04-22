@@ -1537,6 +1537,9 @@ test('exports active extension folder as a Python package from toolbar dropdown'
     name: /Export plugin folder as/
   });
   await expect(exportButton).toBeVisible();
+  await expect(
+    exportButton.locator('.jp-PluginPlayground-actionLabel')
+  ).toHaveText('Export .whl');
   await exportButton.click();
 
   await page.waitForCondition(() =>
@@ -2763,17 +2766,16 @@ test('shows toolbar share dropdown package option availability', async ({
     '.jp-PluginPlayground-shareDropdownButton'
   );
   await expect(shareToolbarButton).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Share file' })).toBeVisible();
 
   await shareToolbarButton.click();
-  const singleFileMenuItem = page.getByRole('menuitem', {
-    name: 'Share Single File',
-    exact: true
-  });
+  const singleFileMenuItem = page
+    .locator('[role="menuitem"], [role="menuitemcheckbox"]')
+    .filter({ hasText: /^Share (Single )?File$/ });
   await expect(singleFileMenuItem).toBeVisible();
-  const disabledPackageMenuItem = page.getByRole('menuitem', {
-    name: 'Share Package',
-    exact: true
-  });
+  const disabledPackageMenuItem = page
+    .locator('[role="menuitem"], [role="menuitemcheckbox"]')
+    .filter({ hasText: /^Share Package$/ });
   await expect(disabledPackageMenuItem).toBeVisible();
   await expect(disabledPackageMenuItem).toHaveClass(/lm-mod-disabled/);
   await page.keyboard.press('Escape');
@@ -2785,18 +2787,22 @@ test('shows toolbar share dropdown package option availability', async ({
   );
 
   await shareToolbarButton.click();
-  const packageMenuItem = page.getByRole('menuitem', {
-    name: 'Share Package',
-    exact: true
-  });
+  const packageMenuItem = page
+    .locator('[role="menuitem"], [role="menuitemcheckbox"]')
+    .filter({ hasText: /^Share Package$/ });
   await expect(packageMenuItem).toBeVisible();
   await expect(packageMenuItem).not.toHaveClass(/lm-mod-disabled/);
   await packageMenuItem.click();
+  await expect(
+    page.getByRole('button', { name: 'Share package' })
+  ).toBeVisible();
 
   const shareSelectedFilesButton = page.getByRole('button', {
     name: 'Share Selected Files',
     exact: true
   });
+  await expect(shareSelectedFilesButton).toBeHidden();
+  await page.getByRole('button', { name: 'Share package' }).click();
   await expect(shareSelectedFilesButton).toBeVisible();
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
 });
