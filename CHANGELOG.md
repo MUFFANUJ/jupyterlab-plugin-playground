@@ -2,6 +2,38 @@
 
 <!-- <START NEW CHANGELOG ENTRY> -->
 
+## 1.0.0b0
+
+([Full Changelog](https://github.com/jupyterlab/plugin-playground/compare/v1.0.0a1...736f23d907acf00e4f032f5ed5508c2af3147b10))
+
+### Enhancements made
+
+- Enable generic fromURL docs support for playground [#198](https://github.com/jupyterlab/plugin-playground/pull/198) ([@MUFFANUJ](https://github.com/MUFFANUJ), [@krassowski](https://github.com/krassowski))
+- Add run on save label [#197](https://github.com/jupyterlab/plugin-playground/pull/197) ([@MUFFANUJ](https://github.com/MUFFANUJ), [@krassowski](https://github.com/krassowski))
+- Use URL Fragment for Share Tokens [#193](https://github.com/jupyterlab/plugin-playground/pull/193) ([@MUFFANUJ](https://github.com/MUFFANUJ), [@krassowski](https://github.com/krassowski))
+- Add release badges for npm, PyPI, and conda-forge to README [#188](https://github.com/jupyterlab/plugin-playground/pull/188) ([@MUFFANUJ](https://github.com/MUFFANUJ), [@krassowski](https://github.com/krassowski))
+- Improve split button UX [#177](https://github.com/jupyterlab/plugin-playground/pull/177) ([@MUFFANUJ](https://github.com/MUFFANUJ), [@krassowski](https://github.com/krassowski))
+
+### Bugs fixed
+
+- Fix command argument count badge alignment [#191](https://github.com/jupyterlab/plugin-playground/pull/191) ([@MUFFANUJ](https://github.com/MUFFANUJ), [@krassowski](https://github.com/krassowski))
+- Fix extension examples empty-state messaging [#190](https://github.com/jupyterlab/plugin-playground/pull/190) ([@MUFFANUJ](https://github.com/MUFFANUJ), [@Copilot](https://github.com/Copilot), [@krassowski](https://github.com/krassowski))
+
+### Documentation improvements
+
+- Clarify schema-backed settings support [#192](https://github.com/jupyterlab/plugin-playground/pull/192) ([@MUFFANUJ](https://github.com/MUFFANUJ), [@krassowski](https://github.com/krassowski))
+
+### Contributors to this release
+
+The following people contributed discussions, new ideas, code and documentation contributions, and review.
+See [our definition of contributors](https://github-activity.readthedocs.io/en/latest/use/#how-does-this-tool-define-contributions-in-the-reports).
+
+([GitHub contributors page for this release](https://github.com/jupyterlab/plugin-playground/graphs/contributors?from=2026-04-20&to=2026-04-23&type=c))
+
+@Copilot ([activity](https://github.com/search?q=repo%3Ajupyterlab%2Fplugin-playground+involves%3ACopilot+updated%3A2026-04-20..2026-04-23&type=Issues)) | @krassowski ([activity](https://github.com/search?q=repo%3Ajupyterlab%2Fplugin-playground+involves%3Akrassowski+updated%3A2026-04-20..2026-04-23&type=Issues)) | @MUFFANUJ ([activity](https://github.com/search?q=repo%3Ajupyterlab%2Fplugin-playground+involves%3AMUFFANUJ+updated%3A2026-04-20..2026-04-23&type=Issues))
+
+<!-- <END NEW CHANGELOG ENTRY> -->
+
 ## 1.0.0a1
 
 ([Full Changelog](https://github.com/jupyterlab/plugin-playground/compare/v0.4.0...3dd4bafcdb40de921eed9378d1fb93058b5ea0e0))
@@ -118,8 +150,6 @@ See [our definition of contributors](https://github-activity.readthedocs.io/en/l
 ([GitHub contributors page for this release](https://github.com/jupyterlab/plugin-playground/graphs/contributors?from=2022-03-24&to=2026-04-20&type=c))
 
 @bollwyvl ([activity](https://github.com/search?q=repo%3Ajupyterlab%2Fplugin-playground+involves%3Abollwyvl+updated%3A2022-03-24..2026-04-20&type=Issues)) | @fcollonval ([activity](https://github.com/search?q=repo%3Ajupyterlab%2Fplugin-playground+involves%3Afcollonval+updated%3A2022-03-24..2026-04-20&type=Issues)) | @jtpio ([activity](https://github.com/search?q=repo%3Ajupyterlab%2Fplugin-playground+involves%3Ajtpio+updated%3A2022-03-24..2026-04-20&type=Issues)) | @krassowski ([activity](https://github.com/search?q=repo%3Ajupyterlab%2Fplugin-playground+involves%3Akrassowski+updated%3A2022-03-24..2026-04-20&type=Issues)) | @MUFFANUJ ([activity](https://github.com/search?q=repo%3Ajupyterlab%2Fplugin-playground+involves%3AMUFFANUJ+updated%3A2022-03-24..2026-04-20&type=Issues)) | @wolfv ([activity](https://github.com/search?q=repo%3Ajupyterlab%2Fplugin-playground+involves%3Awolfv+updated%3A2022-03-24..2026-04-20&type=Issues))
-
-<!-- <END NEW CHANGELOG ENTRY> -->
 
 ## 0.4.0
 
