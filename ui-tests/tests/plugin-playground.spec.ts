@@ -41,7 +41,7 @@ const JUPYTERLITE_AI_CHAT_PANEL_ID = '@jupyterlite/ai:chat-panel';
 const PLAYGROUND_SIDEBAR_ID = 'jp-plugin-playground-sidebar';
 const TOKEN_SECTION_ID = 'jp-plugin-token-sidebar';
 const EXAMPLE_SECTION_ID = 'jp-plugin-example-sidebar';
-const LOAD_ON_SAVE_CHECKBOX_LABEL = 'Auto Load on Save';
+const LOAD_ON_SAVE_CHECKBOX_LABEL = 'Run on save';
 const FOLDER_SHARE_DISABLE_DIALOG_CHECKBOX_LABEL =
   'Do not ask me again if all files can be included';
 
@@ -277,6 +277,14 @@ async function findLoadOnSaveToggle(
   });
   await expect(toggle).toBeVisible();
   return toggle;
+}
+
+async function findLoadOnSaveToggleLabel(
+  page: IJupyterLabPageFixture
+): Promise<Locator> {
+  const label = page.locator('.jp-PluginPlayground-loadOnSaveText');
+  await expect(label).toBeVisible();
+  return label;
 }
 
 async function focusActiveEditor(page: IJupyterLabPageFixture): Promise<void> {
@@ -3961,8 +3969,9 @@ test('per-file load-on-save toggle is off by default and enables auto-load', asy
   expect(await page.activity.activateTab(TEST_FILE)).toBe(true);
 
   const loadOnSaveToggle = await findLoadOnSaveToggle(page);
+  const loadOnSaveToggleLabel = await findLoadOnSaveToggleLabel(page);
   await expect(loadOnSaveToggle).toHaveAttribute('aria-pressed', 'false');
-  await loadOnSaveToggle.click();
+  await loadOnSaveToggleLabel.click();
   await expect(loadOnSaveToggle).toHaveAttribute('aria-pressed', 'true');
 
   await focusActiveEditor(page);
