@@ -816,7 +816,12 @@ test.describe('extension-examples smoke loading', () => {
     ).toBeGreaterThan(0);
 
     for (const example of examplesResult.items) {
-      await page.filebrowser.open(example.path);
+      await page.evaluate(async (pathToOpen: string) => {
+        await window.jupyterapp.commands.execute('docmanager:open', {
+          path: pathToOpen,
+          factory: 'Editor'
+        });
+      }, example.path);
       await page.waitForFunction((pathToOpen: string) => {
         const current = window.jupyterapp.shell
           .currentWidget as FileEditorWidget | null;
