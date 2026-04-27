@@ -4,6 +4,8 @@ import type { FileEditorWidget } from '@jupyterlab/fileeditor';
 import type { IJupyterLabPageFixture } from '@jupyterlab/galata';
 import type { Contents } from '@jupyterlab/services';
 import type { ConsoleMessage, Locator } from '@playwright/test';
+import { existsSync } from 'fs';
+import { resolve } from 'path';
 
 const LOAD_COMMAND = 'plugin-playground:load-as-extension';
 const EXPORT_COMMAND = 'plugin-playground:export-as-extension';
@@ -20,6 +22,11 @@ const LIST_TOKENS_COMMAND = 'plugin-playground:list-tokens';
 const LIST_COMMANDS_COMMAND = 'plugin-playground:list-commands';
 const LIST_EXAMPLES_COMMAND = 'plugin-playground:list-extension-examples';
 const MIN_BUNDLED_EXTENSION_EXAMPLE_COUNT = 29;
+const EXTENSION_EXAMPLES_ROOT = 'extension-examples';
+const LOCAL_EXTENSION_EXAMPLES_PATH = resolve(
+  process.cwd(),
+  '../extension-examples'
+);
 const TOUR_MISSING_HINT =
   'Guided tours are unavailable because "jupyterlab-tour" is not installed in this environment.';
 const TEST_PLUGIN_ID = 'playground-integration-test:plugin';
@@ -830,6 +837,16 @@ test.describe('extension-examples smoke loading', () => {
     page.on('console', onConsole);
     try {
       await page.goto();
+      if (!(await page.contents.directoryExists(EXTENSION_EXAMPLES_ROOT))) {
+        expect(
+          existsSync(LOCAL_EXTENSION_EXAMPLES_PATH),
+          `Missing local extension examples at ${LOCAL_EXTENSION_EXAMPLES_PATH}.`
+        ).toBe(true);
+        await page.contents.uploadDirectory(
+          LOCAL_EXTENSION_EXAMPLES_PATH,
+          EXTENSION_EXAMPLES_ROOT
+        );
+      }
       await page.waitForCondition(() =>
         page.evaluate((id: string) => {
           return window.jupyterapp.commands.hasCommand(id);
