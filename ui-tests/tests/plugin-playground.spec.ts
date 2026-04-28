@@ -837,16 +837,14 @@ test.describe('extension-examples smoke loading', () => {
     page.on('console', onConsole);
     try {
       await page.goto();
-      if (!(await page.contents.directoryExists(EXTENSION_EXAMPLES_ROOT))) {
-        expect(
-          existsSync(LOCAL_EXTENSION_EXAMPLES_PATH),
-          `Missing local extension examples at ${LOCAL_EXTENSION_EXAMPLES_PATH}.`
-        ).toBe(true);
-        await page.contents.uploadDirectory(
-          LOCAL_EXTENSION_EXAMPLES_PATH,
-          EXTENSION_EXAMPLES_ROOT
-        );
-      }
+      expect(
+        existsSync(LOCAL_EXTENSION_EXAMPLES_PATH),
+        `Missing local extension examples at ${LOCAL_EXTENSION_EXAMPLES_PATH}.`
+      ).toBe(true);
+      await page.contents.uploadDirectory(
+        LOCAL_EXTENSION_EXAMPLES_PATH,
+        EXTENSION_EXAMPLES_ROOT
+      );
       await page.waitForCondition(() =>
         page.evaluate((id: string) => {
           return window.jupyterapp.commands.hasCommand(id);
@@ -858,28 +856,40 @@ test.describe('extension-examples smoke loading', () => {
         }, LOAD_COMMAND)
       );
 
-      const discoveryResult = (await page.evaluate(
-        async ({ id, prefix }) => {
-          const result = (await window.jupyterapp.commands.execute(id, {})) as {
+      const discoverExamples = async () => {
+        return (await page.evaluate(
+          async ({ id, prefix }) => {
+            const result = (await window.jupyterapp.commands.execute(
+              id,
+              {}
+            )) as {
+              count: number;
+              items: Array<{ name: string; path: string }>;
+            };
+            const discoveryLog = `${prefix}${result.count}`;
+            window.console.debug(discoveryLog);
+            return { result, discoveryLog };
+          },
+          {
+            id: LIST_EXAMPLES_COMMAND,
+            prefix: discoveryLogPrefix
+          }
+        )) as {
+          result: {
             count: number;
             items: Array<{ name: string; path: string }>;
           };
-          const discoveryLog = `${prefix}${result.count}`;
-          window.console.debug(discoveryLog);
-          return { result, discoveryLog };
-        },
-        {
-          id: LIST_EXAMPLES_COMMAND,
-          prefix: discoveryLogPrefix
-        }
-      )) as {
-        result: {
-          count: number;
-          items: Array<{ name: string; path: string }>;
+          discoveryLog: string;
         };
-        discoveryLog: string;
       };
+
+      const discoveryResult = await discoverExamples();
       const examplesResult = discoveryResult.result;
+      const bundledExamples = examplesResult.items.filter(
+        example =>
+          !example.path.startsWith('extension-examples/integration-example')
+      );
+
       const discoveredCount = Number.parseInt(
         discoveryResult.discoveryLog.slice(discoveryLogPrefix.length),
         10
@@ -893,10 +903,6 @@ test.describe('extension-examples smoke loading', () => {
         'Discovery log count does not match list-extension-examples command output.'
       ).toBe(examplesResult.count);
 
-      const bundledExamples = examplesResult.items.filter(
-        example =>
-          !example.path.startsWith('extension-examples/integration-example')
-      );
       expect(
         bundledExamples.length,
         `Expected at least ${MIN_BUNDLED_EXTENSION_EXAMPLE_COUNT} bundled extension examples, but discovered ${bundledExamples.length}.`
