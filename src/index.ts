@@ -2253,12 +2253,21 @@ class PluginPlayground {
         return;
       }
 
-      // Keep a local copy for dynamic-only plugins when server-side schema is unavailable.
-      this._writeDynamicSettingRaw(pluginId, raw);
+      const savedToBrowserStorage = this._writeDynamicSettingRaw(pluginId, raw);
       try {
         await originalSave(pluginId, raw);
-      } catch {
-        // Swallow server save errors for dynamic-only plugins and keep local fallback.
+      } catch (error) {
+        const saveErrorMessage =
+          error instanceof Error ? error.message : String(error);
+        console.warn(
+          `[plugin-playground] Failed to save dynamic settings for "${pluginId}" to server.`,
+          error
+        );
+        if (!savedToBrowserStorage) {
+          throw new Error(
+            `Could not persist settings for "${pluginId}" because browser storage is unavailable and server save failed: ${saveErrorMessage}`
+          );
+        }
       }
     };
   }
@@ -2315,24 +2324,26 @@ class PluginPlayground {
     return '{}';
   }
 
-  private _writeDynamicSettingRaw(pluginId: string, raw: string): void {
+  private _writeDynamicSettingRaw(pluginId: string, raw: string): boolean {
     if (typeof window === 'undefined') {
-      return;
+      return false;
     }
 
     const storageKey = `${DYNAMIC_SETTINGS_STORAGE_KEY_PREFIX}${pluginId}`;
     try {
       window.localStorage.setItem(storageKey, raw);
-      return;
+      return true;
     } catch {
       // Fall through to sessionStorage.
     }
 
     try {
       window.sessionStorage.setItem(storageKey, raw);
+      return true;
     } catch {
       // No browser storage available.
     }
+    return false;
   }
 
   private _refreshExtensionPoints(): void {

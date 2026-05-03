@@ -2010,8 +2010,42 @@ test('persists dynamic plugin settings after page refresh', async ({
   );
   await page.goto();
 
-  await page.filebrowser.open(sourcePath);
-  expect(await page.activity.activateTab('index.ts')).toBe(true);
+  const openSourceInEditor = async () => {
+    const openResult = await page.evaluate(async (pathToOpen: string) => {
+      type EditorWidgetShape = {
+        id?: string;
+        context?: { ready?: Promise<void>; path?: string };
+      };
+      const widget = (await window.jupyterapp.commands.execute(
+        'docmanager:open',
+        {
+          path: pathToOpen,
+          factory: 'Editor'
+        }
+      )) as EditorWidgetShape | null;
+      await widget?.context?.ready;
+      if (widget?.id) {
+        window.jupyterapp.shell.activateById(widget.id);
+        await new Promise<void>(resolve =>
+          window.requestAnimationFrame(() => resolve())
+        );
+      }
+      return {
+        openedPath: widget?.context?.path ?? null,
+        widgetId: widget?.id ?? null
+      };
+    }, sourcePath);
+
+    expect(openResult.openedPath).toBe(sourcePath);
+    if (openResult.widgetId) {
+      await page.waitForFunction((widgetId: string) => {
+        return window.jupyterapp.shell.currentWidget?.id === widgetId;
+      }, openResult.widgetId);
+    }
+    expect(await page.activity.activateTab('index.ts')).toBe(true);
+  };
+
+  await openSourceInEditor();
 
   await page.waitForCondition(() =>
     page.evaluate((id: string) => {
@@ -2047,9 +2081,9 @@ test('persists dynamic plugin settings after page refresh', async ({
   }, DYNAMIC_SETTINGS_PERSIST_TEST_GET_COMMAND);
   expect(firstValue).toBe(true);
 
-  await page.goto();
+  await page.reload({ waitForIsReady: false });
+  await openSourceInEditor();
 
-  await page.filebrowser.open(sourcePath);
   await page.waitForCondition(() =>
     page.evaluate((id: string) => {
       return window.jupyterapp.commands.hasCommand(id);
