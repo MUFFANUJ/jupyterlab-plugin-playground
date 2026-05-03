@@ -2215,6 +2215,20 @@ class PluginPlayground {
         return originalFetch(pluginId);
       }
 
+      const storedRaw = this._readDynamicSettingRawFromStorage(pluginId);
+      if (storedRaw !== null) {
+        return {
+          id: pluginId,
+          schema,
+          raw: storedRaw,
+          data: {
+            composite: {},
+            user: {}
+          },
+          version: '0.0.0'
+        };
+      }
+
       try {
         const fetched = await originalFetch(pluginId);
         this._writeDynamicSettingRaw(pluginId, fetched.raw);
@@ -2249,9 +2263,9 @@ class PluginPlayground {
     };
   }
 
-  private _readDynamicSettingRaw(pluginId: string): string {
+  private _readDynamicSettingRawFromStorage(pluginId: string): string | null {
     if (typeof window === 'undefined') {
-      return '{}';
+      return null;
     }
 
     const storageKey = `${DYNAMIC_SETTINGS_STORAGE_KEY_PREFIX}${pluginId}`;
@@ -2273,7 +2287,11 @@ class PluginPlayground {
       // No browser storage available.
     }
 
-    return '{}';
+    return null;
+  }
+
+  private _readDynamicSettingRaw(pluginId: string): string {
+    return this._readDynamicSettingRawFromStorage(pluginId) ?? '{}';
   }
 
   private _writeDynamicSettingRaw(pluginId: string, raw: string): void {
