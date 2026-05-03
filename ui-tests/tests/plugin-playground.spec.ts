@@ -12,6 +12,8 @@ const EXPORT_COMMAND = 'plugin-playground:export-as-extension';
 const SHARE_COMMAND = 'plugin-playground:share-via-link';
 const OPEN_PACKAGES_REFERENCE_COMMAND = 'plugin-playground:open-js-explorer';
 const INTERNAL_CONTEXT_INFO_COMMAND = '__internal:context-menu-info';
+const INTERNAL_DYNAMIC_SETTINGS_STATE_COMMAND =
+  '__internal:plugin-playground-dynamic-settings-state';
 const CREATE_FILE_COMMAND = 'plugin-playground:create-new-plugin';
 const CREATE_FILE_WITH_AI_COMMAND =
   'plugin-playground:create-new-plugin-with-ai';
@@ -234,6 +236,34 @@ const CSS_IMPORT_TEST_PACKAGE_JSON_WITH_STYLE = JSON.stringify(
     style: 'style/index.css',
     jupyterlab: {
       extension: true
+    }
+  },
+  null,
+  2
+);
+
+const DYNAMIC_SETTINGS_RELOAD_TEST_PLUGIN_ID =
+  'dynamic-settings-reload-test:plugin';
+const DYNAMIC_SETTINGS_RELOAD_TEST_SOURCE = `
+const plugin = {
+  id: '${DYNAMIC_SETTINGS_RELOAD_TEST_PLUGIN_ID}',
+  autoStart: true,
+  activate: () => {
+    // no-op
+  }
+};
+
+export default plugin;
+`;
+const DYNAMIC_SETTINGS_RELOAD_TEST_SCHEMA = JSON.stringify(
+  {
+    title: 'Dynamic settings reload test schema',
+    type: 'object',
+    properties: {
+      enabled: {
+        type: 'boolean',
+        default: true
+      }
     }
   },
   null,
@@ -1835,6 +1865,83 @@ test('rolls back CSS changes when plugin schema parsing fails', async ({
       return window.getComputedStyle(marker).backgroundColor;
     }, CSS_IMPORT_TEST_MARKER_ID)
   ).resolves.toBe(CSS_IMPORT_TEST_COLOR);
+});
+
+test('removes settings entry when reloading plugin without schema', async ({
+  page,
+  tmpPath
+}) => {
+  const projectRoot = `${tmpPath}/dynamic-settings-reload-test`;
+  const sourcePath = `${projectRoot}/index.ts`;
+  const schemaPath = `${projectRoot}/plugin.json`;
+
+  await page.contents.uploadContent(
+    DYNAMIC_SETTINGS_RELOAD_TEST_SOURCE,
+    'text',
+    sourcePath
+  );
+  await page.contents.uploadContent(
+    DYNAMIC_SETTINGS_RELOAD_TEST_SCHEMA,
+    'text',
+    schemaPath
+  );
+  await page.goto();
+
+  await page.filebrowser.open(sourcePath);
+  expect(await page.activity.activateTab('index.ts')).toBe(true);
+
+  await page.waitForCondition(() =>
+    page.evaluate((id: string) => {
+      return window.jupyterapp.commands.hasCommand(id);
+    }, LOAD_COMMAND)
+  );
+
+  const firstLoadResult = await page.evaluate((id: string) => {
+    return window.jupyterapp.commands.execute(id);
+  }, LOAD_COMMAND);
+  expect(firstLoadResult.ok).toBe(true);
+  expect(firstLoadResult.status).toBe('loaded');
+  expect(firstLoadResult.pluginIds).toContain(
+    DYNAMIC_SETTINGS_RELOAD_TEST_PLUGIN_ID
+  );
+  const firstDynamicSettingsState = await page.evaluate(
+    ({ commandId, pluginId }) => {
+      return window.jupyterapp.commands.execute(commandId, { pluginId });
+    },
+    {
+      commandId: INTERNAL_DYNAMIC_SETTINGS_STATE_COMMAND,
+      pluginId: DYNAMIC_SETTINGS_RELOAD_TEST_PLUGIN_ID
+    }
+  );
+  expect(firstDynamicSettingsState.hasDynamicSchema).toBe(true);
+  expect(firstDynamicSettingsState.hasRegistryPlugin).toBe(true);
+
+  await page.evaluate(async (path: string) => {
+    await window.jupyterapp.serviceManager.contents.delete(path);
+  }, schemaPath);
+  await expect(page.contents.fileExists(schemaPath)).resolves.toBe(false);
+
+  expect(await page.activity.activateTab('index.ts')).toBe(true);
+  const secondLoadResult = await page.evaluate((id: string) => {
+    return window.jupyterapp.commands.execute(id);
+  }, LOAD_COMMAND);
+  expect(secondLoadResult.ok).toBe(true);
+  expect(secondLoadResult.status).toBe('loaded');
+  expect(secondLoadResult.pluginIds).toContain(
+    DYNAMIC_SETTINGS_RELOAD_TEST_PLUGIN_ID
+  );
+
+  const secondDynamicSettingsState = await page.evaluate(
+    ({ commandId, pluginId }) => {
+      return window.jupyterapp.commands.execute(commandId, { pluginId });
+    },
+    {
+      commandId: INTERNAL_DYNAMIC_SETTINGS_STATE_COMMAND,
+      pluginId: DYNAMIC_SETTINGS_RELOAD_TEST_PLUGIN_ID
+    }
+  );
+  expect(secondDynamicSettingsState.hasDynamicSchema).toBe(false);
+  expect(secondDynamicSettingsState.hasRegistryPlugin).toBe(false);
 });
 
 test('exports active extension folder as a zip archive', async ({

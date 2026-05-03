@@ -142,6 +142,8 @@ namespace CommandIDs {
   export const listCommands = 'plugin-playground:list-commands';
   export const listExtensionExamples =
     'plugin-playground:list-extension-examples';
+  export const dynamicSettingsState =
+    '__internal:plugin-playground-dynamic-settings-state';
 }
 
 type PluginLoadStatus =
@@ -351,6 +353,8 @@ const NOTEBOOK_TREE_OPEN_SIDEBAR_KEY =
   'plugin-playground:open-sidebar-from-tree';
 const NOTEBOOK_TREE_OPEN_AI_CHAT_KEY =
   'plugin-playground:open-ai-chat-from-tree';
+const DYNAMIC_SETTINGS_STORAGE_KEY_PREFIX =
+  'plugin-playground:dynamic-settings:';
 const NOTEBOOK_SHELL_PLUGIN_ID =
   '@jupyter-notebook/application-extension:shell';
 const NOTEBOOK_TREE_WIDGET_PLUGIN_ID =
@@ -399,6 +403,7 @@ class PluginPlayground {
       joinPath: this._joinPath.bind(this),
       onShowSharedFileToolbarCue: this._showSharedFileToolbarCue.bind(this)
     });
+    this._installDynamicSettingsConnectorShim();
 
     loadKnownModule('@jupyter-widgets/base').then((module: any) => {
       // Define the widgets base module for RequireJS (left for compatibility only)
@@ -817,7 +822,30 @@ class PluginPlayground {
         };
       }
     });
-
+    app.commands.addCommand(CommandIDs.dynamicSettingsState, {
+      label: 'Inspect dynamic settings state',
+      caption: 'Internal command for dynamic settings state checks',
+      describedBy: {
+        args: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            pluginId: {
+              type: 'string'
+            }
+          }
+        }
+      },
+      execute: args => {
+        const pluginId =
+          typeof args.pluginId === 'string' ? args.pluginId.trim() : '';
+        return {
+          hasDynamicSchema: this._dynamicSettingPlugins.has(pluginId),
+          hasRegistryPlugin:
+            this.settingRegistry.plugins[pluginId] !== undefined
+        };
+      }
+    });
     app.restored.then(async () => {
       const settings = this.settings;
       this._updateSettings(requirejs, settings);
@@ -1965,6 +1993,25 @@ class PluginPlayground {
     const skippedAutoStartPluginIds: string[] = [];
     const loadedLocalStylePaths = importResolver.loadedLocalStylePaths;
     const newlyRegisteredPluginIds: string[] = [];
+    const changedDynamicSettingPluginIds = new Set<string>();
+    const previousDynamicSettingSchemas = new Map<
+      string,
+      ISettingRegistry.ISchema | undefined
+    >();
+    const previousSettingRegistryPlugins = new Map<
+      string,
+      ISettingRegistry.IPlugin | undefined
+    >();
+    for (const plugin of plugins) {
+      previousDynamicSettingSchemas.set(
+        plugin.id,
+        this._dynamicSettingPlugins.get(plugin.id)
+      );
+      previousSettingRegistryPlugins.set(
+        plugin.id,
+        this.settingRegistry.plugins[plugin.id]
+      );
+    }
 
     try {
       for (const declaredStylePath of result.declaredStylePaths) {
@@ -1988,6 +2035,21 @@ class PluginPlayground {
       for (const plugin of plugins) {
         const schema = result.schemas[plugin.id];
         if (!schema) {
+          const hadDynamicSettings = this._dynamicSettingPlugins.delete(
+            plugin.id
+          );
+          const hadSettingsEntry =
+            this.settingRegistry.plugins[plugin.id] !== undefined;
+          if (hadDynamicSettings || hadSettingsEntry) {
+            changedDynamicSettingPluginIds.add(plugin.id);
+            delete this.settingRegistry.plugins[plugin.id];
+            (
+              this.settingRegistry.pluginChanged as Signal<
+                ISettingRegistry,
+                string
+              >
+            ).emit(plugin.id);
+          }
           continue;
         }
         // TODO: this is mostly fine to get the menus and toolbars, but:
@@ -1997,7 +2059,7 @@ class PluginPlayground {
         const dynamicSettingPlugin: ISettingRegistry.IPlugin = {
           id: plugin.id,
           schema: JSON.parse(schema),
-          raw: '{}',
+          raw: this._readDynamicSettingRaw(plugin.id),
           data: {
             composite: {},
             user: {}
@@ -2013,7 +2075,9 @@ class PluginPlayground {
               .join(' ')}`
           );
         }
+        this._dynamicSettingPlugins.set(plugin.id, dynamicSettingPlugin.schema);
         this.settingRegistry.plugins[plugin.id] = dynamicSettingPlugin;
+        changedDynamicSettingPluginIds.add(plugin.id);
         (
           this.settingRegistry.pluginChanged as Signal<ISettingRegistry, string>
         ).emit(plugin.id);
@@ -2038,6 +2102,24 @@ class PluginPlayground {
             cleanupError
           );
         }
+      }
+      for (const pluginId of changedDynamicSettingPluginIds) {
+        const previousSchema = previousDynamicSettingSchemas.get(pluginId);
+        if (previousSchema === undefined) {
+          this._dynamicSettingPlugins.delete(pluginId);
+        } else {
+          this._dynamicSettingPlugins.set(pluginId, previousSchema);
+        }
+
+        const previousPlugin = previousSettingRegistryPlugins.get(pluginId);
+        if (previousPlugin === undefined) {
+          delete this.settingRegistry.plugins[pluginId];
+        } else {
+          this.settingRegistry.plugins[pluginId] = previousPlugin;
+        }
+        (
+          this.settingRegistry.pluginChanged as Signal<ISettingRegistry, string>
+        ).emit(pluginId);
       }
       const message = error instanceof Error ? error.message : String(error);
       showErrorMessage('Plugin loading failed', message);
@@ -2109,6 +2191,109 @@ class PluginPlayground {
       transpiled: result.transpiled,
       skippedAutoStartPluginIds: skippedAutoStartPluginIdsResult
     };
+  }
+
+  private _installDynamicSettingsConnectorShim(): void {
+    const connector = this.settingRegistry.connector as {
+      fetch(id: string): Promise<ISettingRegistry.IPlugin>;
+      save(id: string, raw: string): Promise<void>;
+      __pluginPlaygroundDynamicSettingsPatched__?: boolean;
+    };
+    if (connector.__pluginPlaygroundDynamicSettingsPatched__) {
+      return;
+    }
+    connector.__pluginPlaygroundDynamicSettingsPatched__ = true;
+
+    const originalFetch = connector.fetch.bind(connector);
+    const originalSave = connector.save.bind(connector);
+
+    connector.fetch = async (
+      pluginId: string
+    ): Promise<ISettingRegistry.IPlugin> => {
+      const schema = this._dynamicSettingPlugins.get(pluginId);
+      if (!schema) {
+        return originalFetch(pluginId);
+      }
+
+      try {
+        const fetched = await originalFetch(pluginId);
+        this._writeDynamicSettingRaw(pluginId, fetched.raw);
+        return fetched;
+      } catch {
+        return {
+          id: pluginId,
+          schema,
+          raw: this._readDynamicSettingRaw(pluginId),
+          data: {
+            composite: {},
+            user: {}
+          },
+          version: '0.0.0'
+        };
+      }
+    };
+
+    connector.save = async (pluginId: string, raw: string): Promise<void> => {
+      if (!this._dynamicSettingPlugins.has(pluginId)) {
+        await originalSave(pluginId, raw);
+        return;
+      }
+
+      // Keep a local copy for dynamic-only plugins when server-side schema is unavailable.
+      this._writeDynamicSettingRaw(pluginId, raw);
+      try {
+        await originalSave(pluginId, raw);
+      } catch {
+        // Swallow server save errors for dynamic-only plugins and keep local fallback.
+      }
+    };
+  }
+
+  private _readDynamicSettingRaw(pluginId: string): string {
+    if (typeof window === 'undefined') {
+      return '{}';
+    }
+
+    const storageKey = `${DYNAMIC_SETTINGS_STORAGE_KEY_PREFIX}${pluginId}`;
+    try {
+      const storedRaw = window.localStorage.getItem(storageKey);
+      if (storedRaw !== null) {
+        return storedRaw;
+      }
+    } catch {
+      // Continue to sessionStorage fallback.
+    }
+
+    try {
+      const storedRaw = window.sessionStorage.getItem(storageKey);
+      if (storedRaw !== null) {
+        return storedRaw;
+      }
+    } catch {
+      // No browser storage available.
+    }
+
+    return '{}';
+  }
+
+  private _writeDynamicSettingRaw(pluginId: string, raw: string): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const storageKey = `${DYNAMIC_SETTINGS_STORAGE_KEY_PREFIX}${pluginId}`;
+    try {
+      window.localStorage.setItem(storageKey, raw);
+      return;
+    } catch {
+      // Fall through to sessionStorage.
+    }
+
+    try {
+      window.sessionStorage.setItem(storageKey, raw);
+    } catch {
+      // No browser storage available.
+    }
   }
 
   private _refreshExtensionPoints(): void {
@@ -2280,25 +2465,84 @@ class PluginPlayground {
   private _ensureDeactivateSupport(
     plugin: IPlugin<JupyterFrontEnd, unknown>
   ): IPlugin<JupyterFrontEnd, unknown> {
-    const trackedCommandDisposables: Array<{ dispose: () => void }> = [];
+    const noopDisposable = {
+      dispose(): void {
+        // no-op
+      }
+    };
+    const trackedCommandDisposables = new Map<
+      string,
+      { dispose: () => void }
+    >();
+    const disposeTrackedCommands = (): void => {
+      for (const [id, disposable] of trackedCommandDisposables) {
+        try {
+          disposable.dispose();
+        } catch (error) {
+          console.warn(`Failed to dispose plugin command "${id}"`, error);
+        }
+      }
+      trackedCommandDisposables.clear();
+    };
+    let activationNonce = 0;
+    let isDeactivated = false;
     const originalActivate = plugin.activate;
     const originalDeactivate = plugin.deactivate;
 
     plugin.activate = async (app: JupyterFrontEnd, ...services: unknown[]) => {
-      const originalAddCommand = app.commands.addCommand.bind(app.commands);
-      app.commands.addCommand = ((id, options) => {
-        const disposable = originalAddCommand(id, options);
-        trackedCommandDisposables.push(disposable);
-        return disposable;
+      activationNonce += 1;
+      const currentActivationNonce = activationNonce;
+      isDeactivated = false;
+
+      const proxyCommands = Object.create(app.commands) as typeof app.commands;
+      const addCommand = app.commands.addCommand.bind(app.commands);
+      proxyCommands.addCommand = ((id, options) => {
+        if (isDeactivated || currentActivationNonce !== activationNonce) {
+          return noopDisposable;
+        }
+
+        if (app.commands.hasCommand(id)) {
+          const existingDisposable = trackedCommandDisposables.get(id);
+          if (existingDisposable) {
+            try {
+              existingDisposable.dispose();
+            } catch (error) {
+              console.warn(`Failed to dispose stale command "${id}"`, error);
+            } finally {
+              trackedCommandDisposables.delete(id);
+            }
+          } else {
+            console.warn(
+              `Skipping duplicate command "${id}" from "${plugin.id}" because it is already registered by another source.`
+            );
+            return noopDisposable;
+          }
+        }
+
+        const disposable = addCommand(id, options);
+        trackedCommandDisposables.set(id, disposable);
+        return {
+          dispose: () => {
+            trackedCommandDisposables.delete(id);
+            disposable.dispose();
+          }
+        };
       }) as typeof app.commands.addCommand;
 
+      const proxyApp = Object.create(app) as JupyterFrontEnd;
+      (
+        proxyApp as JupyterFrontEnd & {
+          commands: typeof app.commands;
+        }
+      ).commands = proxyCommands;
+
       try {
-        return await originalActivate(app, ...services);
+        return await originalActivate(proxyApp, ...services);
       } catch (error) {
-        this._disposeTrackedCommands(trackedCommandDisposables);
+        isDeactivated = true;
+        activationNonce += 1;
+        disposeTrackedCommands();
         throw error;
-      } finally {
-        app.commands.addCommand = originalAddCommand;
       }
     };
 
@@ -2306,32 +2550,18 @@ class PluginPlayground {
       app: JupyterFrontEnd,
       ...services: unknown[]
     ) => {
+      isDeactivated = true;
+      activationNonce += 1;
       try {
         if (originalDeactivate) {
           await originalDeactivate(app, ...services);
         }
       } finally {
-        this._disposeTrackedCommands(trackedCommandDisposables);
+        disposeTrackedCommands();
       }
     };
 
     return plugin;
-  }
-
-  private _disposeTrackedCommands(
-    trackedCommandDisposables: Array<{ dispose: () => void }>
-  ): void {
-    while (trackedCommandDisposables.length > 0) {
-      const disposable = trackedCommandDisposables.pop();
-      if (!disposable) {
-        continue;
-      }
-      try {
-        disposable.dispose();
-      } catch (error) {
-        console.warn('Failed to dispose plugin command registration', error);
-      }
-    }
   }
 
   private async _deactivateAndDeregisterPlugin(
@@ -3340,6 +3570,10 @@ class PluginPlayground {
     MainAreaWidget<IFrame>
   >();
   private readonly _pluginLocalStylePaths = new Map<string, Set<string>>();
+  private readonly _dynamicSettingPlugins = new Map<
+    string,
+    ISettingRegistry.ISchema
+  >();
   private _commandInsertMode: CommandInsertMode = DEFAULT_COMMAND_INSERT_MODE;
   private _playgroundSidebar: SidePanel | null = null;
   private _tokenSidebar: TokenSidebar | null = null;
