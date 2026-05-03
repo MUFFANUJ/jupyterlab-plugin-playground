@@ -269,6 +269,52 @@ const DYNAMIC_SETTINGS_RELOAD_TEST_SCHEMA = JSON.stringify(
   null,
   2
 );
+const DYNAMIC_SETTINGS_PERSIST_TEST_PLUGIN_ID =
+  'dynamic-settings-persist-test:plugin';
+const DYNAMIC_SETTINGS_PERSIST_TEST_SET_COMMAND =
+  'dynamic-settings-persist-test:set-enabled';
+const DYNAMIC_SETTINGS_PERSIST_TEST_GET_COMMAND =
+  'dynamic-settings-persist-test:get-enabled';
+const DYNAMIC_SETTINGS_PERSIST_TEST_SOURCE = `
+import { ISettingRegistry } from '@jupyterlab/settingregistry';
+
+const plugin = {
+  id: '${DYNAMIC_SETTINGS_PERSIST_TEST_PLUGIN_ID}',
+  autoStart: true,
+  requires: [ISettingRegistry],
+  activate: async (app, settingRegistry) => {
+    const settings = await settingRegistry.load(
+      '${DYNAMIC_SETTINGS_PERSIST_TEST_PLUGIN_ID}'
+    );
+    app.commands.addCommand('${DYNAMIC_SETTINGS_PERSIST_TEST_SET_COMMAND}', {
+      execute: async args => {
+        const enabled = args.enabled === true;
+        await settings.set('enabled', enabled);
+        return enabled;
+      }
+    });
+    app.commands.addCommand('${DYNAMIC_SETTINGS_PERSIST_TEST_GET_COMMAND}', {
+      execute: () => settings.get('enabled').composite
+    });
+  }
+};
+
+export default plugin;
+`;
+const DYNAMIC_SETTINGS_PERSIST_TEST_SCHEMA = JSON.stringify(
+  {
+    title: 'Dynamic settings persist test schema',
+    type: 'object',
+    properties: {
+      enabled: {
+        type: 'boolean',
+        default: false
+      }
+    }
+  },
+  null,
+  2
+);
 
 async function openSidebarPanel(
   page: IJupyterLabPageFixture,
@@ -1942,6 +1988,93 @@ test('removes settings entry when reloading plugin without schema', async ({
   );
   expect(secondDynamicSettingsState.hasDynamicSchema).toBe(false);
   expect(secondDynamicSettingsState.hasRegistryPlugin).toBe(false);
+});
+
+test('persists dynamic plugin settings after page refresh', async ({
+  page,
+  tmpPath
+}) => {
+  const projectRoot = `${tmpPath}/dynamic-settings-persist-test`;
+  const sourcePath = `${projectRoot}/index.ts`;
+  const schemaPath = `${projectRoot}/plugin.json`;
+
+  await page.contents.uploadContent(
+    DYNAMIC_SETTINGS_PERSIST_TEST_SOURCE,
+    'text',
+    sourcePath
+  );
+  await page.contents.uploadContent(
+    DYNAMIC_SETTINGS_PERSIST_TEST_SCHEMA,
+    'text',
+    schemaPath
+  );
+  await page.goto();
+
+  await page.filebrowser.open(sourcePath);
+  expect(await page.activity.activateTab('index.ts')).toBe(true);
+
+  await page.waitForCondition(() =>
+    page.evaluate((id: string) => {
+      return window.jupyterapp.commands.hasCommand(id);
+    }, LOAD_COMMAND)
+  );
+
+  const firstLoadResult = await page.evaluate((id: string) => {
+    return window.jupyterapp.commands.execute(id);
+  }, LOAD_COMMAND);
+  expect(firstLoadResult.ok).toBe(true);
+  expect(firstLoadResult.status).toBe('loaded');
+  expect(firstLoadResult.pluginIds).toContain(
+    DYNAMIC_SETTINGS_PERSIST_TEST_PLUGIN_ID
+  );
+
+  await page.waitForCondition(() =>
+    page.evaluate((id: string) => {
+      return window.jupyterapp.commands.hasCommand(id);
+    }, DYNAMIC_SETTINGS_PERSIST_TEST_SET_COMMAND)
+  );
+
+  const setResult = await page.evaluate(
+    ({ commandId, enabled }) => {
+      return window.jupyterapp.commands.execute(commandId, { enabled });
+    },
+    { commandId: DYNAMIC_SETTINGS_PERSIST_TEST_SET_COMMAND, enabled: true }
+  );
+  expect(setResult).toBe(true);
+
+  const firstValue = await page.evaluate((commandId: string) => {
+    return window.jupyterapp.commands.execute(commandId);
+  }, DYNAMIC_SETTINGS_PERSIST_TEST_GET_COMMAND);
+  expect(firstValue).toBe(true);
+
+  await page.goto();
+
+  await page.filebrowser.open(sourcePath);
+  await page.waitForCondition(() =>
+    page.evaluate((id: string) => {
+      return window.jupyterapp.commands.hasCommand(id);
+    }, LOAD_COMMAND)
+  );
+
+  const secondLoadResult = await page.evaluate((id: string) => {
+    return window.jupyterapp.commands.execute(id);
+  }, LOAD_COMMAND);
+  expect(secondLoadResult.ok).toBe(true);
+  expect(secondLoadResult.status).toBe('loaded');
+  expect(secondLoadResult.pluginIds).toContain(
+    DYNAMIC_SETTINGS_PERSIST_TEST_PLUGIN_ID
+  );
+
+  await page.waitForCondition(() =>
+    page.evaluate((id: string) => {
+      return window.jupyterapp.commands.hasCommand(id);
+    }, DYNAMIC_SETTINGS_PERSIST_TEST_GET_COMMAND)
+  );
+
+  const secondValue = await page.evaluate((commandId: string) => {
+    return window.jupyterapp.commands.execute(commandId);
+  }, DYNAMIC_SETTINGS_PERSIST_TEST_GET_COMMAND);
+  expect(secondValue).toBe(true);
 });
 
 test('exports active extension folder as a zip archive', async ({

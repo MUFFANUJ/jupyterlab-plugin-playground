@@ -2059,7 +2059,7 @@ class PluginPlayground {
         const dynamicSettingPlugin: ISettingRegistry.IPlugin = {
           id: plugin.id,
           schema: JSON.parse(schema),
-          raw: this._readDynamicSettingRaw(plugin.id),
+          raw: await this._resolveDynamicSettingRaw(plugin.id),
           data: {
             composite: {},
             user: {}
@@ -2292,6 +2292,27 @@ class PluginPlayground {
 
   private _readDynamicSettingRaw(pluginId: string): string {
     return this._readDynamicSettingRawFromStorage(pluginId) ?? '{}';
+  }
+
+  private async _resolveDynamicSettingRaw(pluginId: string): Promise<string> {
+    const storedRaw = this._readDynamicSettingRawFromStorage(pluginId);
+    if (storedRaw !== null) {
+      return storedRaw;
+    }
+
+    const connector = this.settingRegistry.connector as {
+      fetch(id: string): Promise<ISettingRegistry.IPlugin>;
+    };
+    try {
+      const fetched = await connector.fetch(pluginId);
+      if (typeof fetched.raw === 'string') {
+        this._writeDynamicSettingRaw(pluginId, fetched.raw);
+        return fetched.raw;
+      }
+    } catch {
+      // Keep default fallback when connector has no dynamic entry.
+    }
+    return '{}';
   }
 
   private _writeDynamicSettingRaw(pluginId: string, raw: string): void {
