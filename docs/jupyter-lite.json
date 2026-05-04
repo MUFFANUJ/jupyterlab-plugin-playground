@@ -4,7 +4,8 @@
     "appName": "JupyterLab Plugin Playground",
     "disabledExtensions": [
       "jupyterlab-jupytext:plugin",
-      "jupyterlab-tour:default-tours"
+      "jupyterlab-tour:default-tours",
+      "@jupyterlite/javascript-kernel-extension:kernel-iframe"
     ]
   }
 }

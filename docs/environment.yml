@@ -21,4 +21,5 @@ dependencies:
   - nodejs=18
   - pip:
       - build
+      - jupyterlite-javascript-kernel>=0.3,<0.4
       - jupyterlab-open-url-parameter>=0.4,<1
