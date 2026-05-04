@@ -2229,8 +2229,26 @@ class PluginPlayground {
 
       try {
         const fetched = await originalFetch(pluginId);
-        this._writeDynamicSettingRaw(pluginId, fetched.raw);
-        return fetched;
+        const normalizedFetched: ISettingRegistry.IPlugin = {
+          ...fetched,
+          id: pluginId,
+          schema: fetched.schema ?? schema,
+          raw:
+            typeof fetched.raw === 'string'
+              ? fetched.raw
+              : this._readDynamicSettingRaw(pluginId),
+          data: fetched.data ?? {
+            composite: {},
+            user: {}
+          },
+          version: fetched.version ?? '0.0.0'
+        };
+        this._writeStoredDynamicSetting(
+          pluginId,
+          normalizedFetched.raw,
+          normalizedFetched.schema
+        );
+        return normalizedFetched;
       } catch {
         const storedSetting = this._readStoredDynamicSetting(pluginId);
         return {
