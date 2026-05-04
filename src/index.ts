@@ -2236,7 +2236,8 @@ class PluginPlayground {
         return {
           id: pluginId,
           schema,
-          raw: typeof storedSetting?.raw === 'string' ? storedSetting.raw : '{}',
+          raw:
+            typeof storedSetting?.raw === 'string' ? storedSetting.raw : '{}',
           data: {
             composite: {},
             user: {}
@@ -2258,7 +2259,10 @@ class PluginPlayground {
       } catch (error) {
         const saveErrorMessage =
           error instanceof Error ? error.message : String(error);
-        const savedToBrowserStorage = this._writeDynamicSettingRaw(pluginId, raw);
+        const savedToBrowserStorage = this._writeDynamicSettingRaw(
+          pluginId,
+          raw
+        );
         console.warn(
           `[plugin-playground] Failed to save dynamic settings for "${pluginId}" to server.`,
           error

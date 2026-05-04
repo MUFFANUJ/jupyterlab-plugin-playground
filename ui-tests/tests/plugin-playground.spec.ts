@@ -1953,16 +1953,18 @@ test('persists dynamic plugin settings in browser storage', async ({
   }, DYNAMIC_SETTINGS_PERSIST_TEST_PLUGIN_ID);
   expect(storedDynamicSetting).not.toBeNull();
 
-  const parsedStoredDynamicSetting = JSON.parse(storedDynamicSetting ?? '{}') as
+  const parsedStoredDynamicSetting = JSON.parse(
+    storedDynamicSetting ?? '{}'
+  ) as
     | {
         raw?: string;
         schema?: { properties?: { enabled?: { default?: boolean } } };
       }
     | undefined;
   expect(parsedStoredDynamicSetting?.raw).toContain('"enabled": true');
-  expect(
-    parsedStoredDynamicSetting?.schema?.properties?.enabled?.default
-  ).toBe(false);
+  expect(parsedStoredDynamicSetting?.schema?.properties?.enabled?.default).toBe(
+    false
+  );
 });
 
 test('exports active extension folder as a zip archive', async ({
