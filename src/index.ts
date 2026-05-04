@@ -142,8 +142,6 @@ namespace CommandIDs {
   export const listCommands = 'plugin-playground:list-commands';
   export const listExtensionExamples =
     'plugin-playground:list-extension-examples';
-  export const dynamicSettingsState =
-    '__internal:plugin-playground-dynamic-settings-state';
 }
 
 type PluginLoadStatus =
@@ -404,6 +402,7 @@ class PluginPlayground {
       onShowSharedFileToolbarCue: this._showSharedFileToolbarCue.bind(this)
     });
     this._installDynamicSettingsConnectorShim();
+    this._restoreDynamicSettingPluginsFromStorage();
 
     loadKnownModule('@jupyter-widgets/base').then((module: any) => {
       // Define the widgets base module for RequireJS (left for compatibility only)
@@ -819,30 +818,6 @@ class PluginPlayground {
           total: examples.length,
           count: items.length,
           items: [...items]
-        };
-      }
-    });
-    app.commands.addCommand(CommandIDs.dynamicSettingsState, {
-      label: 'Inspect dynamic settings state',
-      caption: 'Internal command for dynamic settings state checks',
-      describedBy: {
-        args: {
-          type: 'object',
-          additionalProperties: false,
-          properties: {
-            pluginId: {
-              type: 'string'
-            }
-          }
-        }
-      },
-      execute: args => {
-        const pluginId =
-          typeof args.pluginId === 'string' ? args.pluginId.trim() : '';
-        return {
-          hasDynamicSchema: this._dynamicSettingPlugins.has(pluginId),
-          hasRegistryPlugin:
-            this.settingRegistry.plugins[pluginId] !== undefined
         };
       }
     });
@@ -2043,6 +2018,9 @@ class PluginPlayground {
           if (hadDynamicSettings || hadSettingsEntry) {
             changedDynamicSettingPluginIds.add(plugin.id);
             delete this.settingRegistry.plugins[plugin.id];
+            this._removeDynamicSettingStorageValue(
+              `${DYNAMIC_SETTINGS_STORAGE_KEY_PREFIX}${plugin.id}`
+            );
             (
               this.settingRegistry.pluginChanged as Signal<
                 ISettingRegistry,
@@ -2056,25 +2034,11 @@ class PluginPlayground {
         // - transforms are not applied
         // - any refresh from the server might overwrite the data
         // - it is not a good long term solution in general
-        const dynamicSettingPlugin: ISettingRegistry.IPlugin = {
-          id: plugin.id,
-          schema: JSON.parse(schema),
-          raw: await this._resolveDynamicSettingRaw(plugin.id),
-          data: {
-            composite: {},
-            user: {}
-          },
-          version: '0.0.0'
-        };
-        const validationErrors =
-          this.settingRegistry.validator.validateData(dynamicSettingPlugin);
-        if (validationErrors) {
-          throw new Error(
-            `Could not validate settings for "${plugin.id}". ${validationErrors
-              .map(error => `{${error.keyword}} ${error.message ?? ''}`)
-              .join(' ')}`
-          );
-        }
+        const dynamicSettingPlugin = this._createDynamicSettingPlugin(
+          plugin.id,
+          JSON.parse(schema) as ISettingRegistry.ISchema,
+          await this._resolveDynamicSettingRaw(plugin.id)
+        );
         this._dynamicSettingPlugins.set(plugin.id, dynamicSettingPlugin.schema);
         this.settingRegistry.plugins[plugin.id] = dynamicSettingPlugin;
         changedDynamicSettingPluginIds.add(plugin.id);
@@ -2137,6 +2101,7 @@ class PluginPlayground {
     for (const plugin of plugins) {
       this._syncPluginLocalStyles(plugin.id, loadedLocalStylePaths);
     }
+    this._syncDynamicSettingStorage();
 
     for (const plugin of plugins) {
       if (!plugin.autoStart) {
@@ -2196,6 +2161,9 @@ class PluginPlayground {
   private _installDynamicSettingsConnectorShim(): void {
     const connector = this.settingRegistry.connector as {
       fetch(id: string): Promise<ISettingRegistry.IPlugin>;
+      list?(
+        query?: 'ids'
+      ): Promise<{ ids: string[]; values: ISettingRegistry.IPlugin[] }>;
       save(id: string, raw: string): Promise<void>;
       __pluginPlaygroundDynamicSettingsPatched__?: boolean;
     };
@@ -2205,7 +2173,51 @@ class PluginPlayground {
     connector.__pluginPlaygroundDynamicSettingsPatched__ = true;
 
     const originalFetch = connector.fetch.bind(connector);
+    const originalList = connector.list?.bind(connector);
     const originalSave = connector.save.bind(connector);
+
+    if (originalList) {
+      connector.list = async (
+        query?: 'ids'
+      ): Promise<{ ids: string[]; values: ISettingRegistry.IPlugin[] }> => {
+        const listed = await originalList(query);
+
+        const ids = new Set(listed.ids ?? []);
+        if (query === 'ids') {
+          for (const pluginId of this._dynamicSettingPlugins.keys()) {
+            ids.add(pluginId);
+          }
+          return {
+            ids: [...ids],
+            values: []
+          };
+        }
+
+        const valuesById = new Map<string, ISettingRegistry.IPlugin>();
+        for (const plugin of listed.values ?? []) {
+          valuesById.set(plugin.id, plugin);
+        }
+
+        for (const [pluginId, schema] of this._dynamicSettingPlugins) {
+          ids.add(pluginId);
+          valuesById.set(pluginId, {
+            id: pluginId,
+            schema,
+            raw: this._readDynamicSettingRaw(pluginId),
+            data: {
+              composite: {},
+              user: {}
+            },
+            version: '0.0.0'
+          });
+        }
+
+        return {
+          ids: [...ids],
+          values: [...valuesById.values()]
+        };
+      };
+    }
 
     connector.fetch = async (
       pluginId: string
@@ -2215,29 +2227,16 @@ class PluginPlayground {
         return originalFetch(pluginId);
       }
 
-      const storedRaw = this._readDynamicSettingRawFromStorage(pluginId);
-      if (storedRaw !== null) {
-        return {
-          id: pluginId,
-          schema,
-          raw: storedRaw,
-          data: {
-            composite: {},
-            user: {}
-          },
-          version: '0.0.0'
-        };
-      }
-
       try {
         const fetched = await originalFetch(pluginId);
         this._writeDynamicSettingRaw(pluginId, fetched.raw);
         return fetched;
       } catch {
+        const storedSetting = this._readStoredDynamicSetting(pluginId);
         return {
           id: pluginId,
           schema,
-          raw: this._readDynamicSettingRaw(pluginId),
+          raw: typeof storedSetting?.raw === 'string' ? storedSetting.raw : '{}',
           data: {
             composite: {},
             user: {}
@@ -2253,12 +2252,13 @@ class PluginPlayground {
         return;
       }
 
-      const savedToBrowserStorage = this._writeDynamicSettingRaw(pluginId, raw);
       try {
         await originalSave(pluginId, raw);
+        this._writeDynamicSettingRaw(pluginId, raw);
       } catch (error) {
         const saveErrorMessage =
           error instanceof Error ? error.message : String(error);
+        const savedToBrowserStorage = this._writeDynamicSettingRaw(pluginId, raw);
         console.warn(
           `[plugin-playground] Failed to save dynamic settings for "${pluginId}" to server.`,
           error
@@ -2272,25 +2272,183 @@ class PluginPlayground {
     };
   }
 
-  private _readDynamicSettingRawFromStorage(pluginId: string): string | null {
+  private _restoreDynamicSettingPluginsFromStorage(): void {
+    for (const pluginId of this._readDynamicSettingPluginIdsFromStorage()) {
+      if (this.settingRegistry.plugins[pluginId] !== undefined) {
+        continue;
+      }
+
+      const storedSetting = this._readStoredDynamicSetting(pluginId);
+      if (!storedSetting?.schema) {
+        continue;
+      }
+
+      try {
+        const dynamicSettingPlugin = this._createDynamicSettingPlugin(
+          pluginId,
+          storedSetting.schema,
+          storedSetting.raw ?? '{}'
+        );
+        this._dynamicSettingPlugins.set(pluginId, dynamicSettingPlugin.schema);
+        this.settingRegistry.plugins[pluginId] = dynamicSettingPlugin;
+        (
+          this.settingRegistry.pluginChanged as Signal<ISettingRegistry, string>
+        ).emit(pluginId);
+      } catch (error) {
+        console.warn(
+          `[plugin-playground] Failed to restore dynamic settings schema for "${pluginId}".`,
+          error
+        );
+        this._removeDynamicSettingStorageValue(
+          `${DYNAMIC_SETTINGS_STORAGE_KEY_PREFIX}${pluginId}`
+        );
+      }
+    }
+  }
+
+  private _createDynamicSettingPlugin(
+    pluginId: string,
+    schema: ISettingRegistry.ISchema,
+    raw: string
+  ): ISettingRegistry.IPlugin {
+    const dynamicSettingPlugin: ISettingRegistry.IPlugin = {
+      id: pluginId,
+      schema,
+      raw,
+      data: {
+        composite: {},
+        user: {}
+      },
+      version: '0.0.0'
+    };
+    const validationErrors =
+      this.settingRegistry.validator.validateData(dynamicSettingPlugin);
+    if (validationErrors) {
+      throw new Error(
+        `Could not validate settings for "${pluginId}". ${validationErrors
+          .map(error => `{${error.keyword}} ${error.message ?? ''}`)
+          .join(' ')}`
+      );
+    }
+    return dynamicSettingPlugin;
+  }
+
+  private _syncDynamicSettingStorage(): void {
+    const storedPluginIds = this._readDynamicSettingPluginIdsFromStorage();
+    for (const pluginId of storedPluginIds) {
+      if (!this._dynamicSettingPlugins.has(pluginId)) {
+        this._removeDynamicSettingStorageValue(
+          `${DYNAMIC_SETTINGS_STORAGE_KEY_PREFIX}${pluginId}`
+        );
+      }
+    }
+
+    for (const [pluginId, schema] of this._dynamicSettingPlugins) {
+      this._writeStoredDynamicSetting(
+        pluginId,
+        this._readDynamicSettingRaw(pluginId),
+        schema
+      );
+    }
+  }
+
+  private _readDynamicSettingPluginIdsFromStorage(): Set<string> {
+    const pluginIds = new Set<string>();
+    if (typeof window === 'undefined') {
+      return pluginIds;
+    }
+
+    const collectPluginIds = (storage: Storage): void => {
+      for (let index = 0; index < storage.length; index += 1) {
+        const key = storage.key(index);
+        if (!key || !key.startsWith(DYNAMIC_SETTINGS_STORAGE_KEY_PREFIX)) {
+          continue;
+        }
+        pluginIds.add(key.slice(DYNAMIC_SETTINGS_STORAGE_KEY_PREFIX.length));
+      }
+    };
+
+    try {
+      collectPluginIds(window.localStorage);
+    } catch {
+      // Local storage unavailable.
+    }
+
+    try {
+      collectPluginIds(window.sessionStorage);
+    } catch {
+      // Session storage unavailable.
+    }
+
+    return pluginIds;
+  }
+
+  private _readStoredDynamicSetting(
+    pluginId: string
+  ): { raw?: string; schema?: ISettingRegistry.ISchema } | null {
+    const storageKey = `${DYNAMIC_SETTINGS_STORAGE_KEY_PREFIX}${pluginId}`;
+    const storedValue = this._readDynamicSettingStorageValue(storageKey);
+    if (storedValue === null) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(storedValue) as {
+        raw?: unknown;
+        schema?: unknown;
+      };
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        ('raw' in parsed || 'schema' in parsed)
+      ) {
+        const raw = typeof parsed.raw === 'string' ? parsed.raw : undefined;
+        const schema =
+          parsed.schema && typeof parsed.schema === 'object'
+            ? (parsed.schema as ISettingRegistry.ISchema)
+            : undefined;
+        return { raw, schema };
+      }
+    } catch {
+      // Legacy storage format where raw settings were stored directly as text.
+    }
+
+    return {
+      raw: storedValue
+    };
+  }
+
+  private _writeStoredDynamicSetting(
+    pluginId: string,
+    raw: string,
+    schema?: ISettingRegistry.ISchema
+  ): boolean {
+    const storageKey = `${DYNAMIC_SETTINGS_STORAGE_KEY_PREFIX}${pluginId}`;
+    const persisted = JSON.stringify({
+      raw,
+      schema
+    });
+    return this._writeDynamicSettingStorageValue(storageKey, persisted);
+  }
+
+  private _readDynamicSettingStorageValue(storageKey: string): string | null {
     if (typeof window === 'undefined') {
       return null;
     }
 
-    const storageKey = `${DYNAMIC_SETTINGS_STORAGE_KEY_PREFIX}${pluginId}`;
     try {
-      const storedRaw = window.localStorage.getItem(storageKey);
-      if (storedRaw !== null) {
-        return storedRaw;
+      const storedValue = window.localStorage.getItem(storageKey);
+      if (storedValue !== null) {
+        return storedValue;
       }
     } catch {
       // Continue to sessionStorage fallback.
     }
 
     try {
-      const storedRaw = window.sessionStorage.getItem(storageKey);
-      if (storedRaw !== null) {
-        return storedRaw;
+      const storedValue = window.sessionStorage.getItem(storageKey);
+      if (storedValue !== null) {
+        return storedValue;
       }
     } catch {
       // No browser storage available.
@@ -2299,16 +2457,54 @@ class PluginPlayground {
     return null;
   }
 
+  private _writeDynamicSettingStorageValue(
+    storageKey: string,
+    value: string
+  ): boolean {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+
+    try {
+      window.localStorage.setItem(storageKey, value);
+      return true;
+    } catch {
+      // Fall through to sessionStorage.
+    }
+
+    try {
+      window.sessionStorage.setItem(storageKey, value);
+      return true;
+    } catch {
+      // No browser storage available.
+    }
+    return false;
+  }
+
+  private _removeDynamicSettingStorageValue(storageKey: string): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      window.localStorage.removeItem(storageKey);
+    } catch {
+      // Keep trying the fallback storage.
+    }
+
+    try {
+      window.sessionStorage.removeItem(storageKey);
+    } catch {
+      // Browser storage unavailable.
+    }
+  }
+
   private _readDynamicSettingRaw(pluginId: string): string {
-    return this._readDynamicSettingRawFromStorage(pluginId) ?? '{}';
+    const storedSetting = this._readStoredDynamicSetting(pluginId);
+    return typeof storedSetting?.raw === 'string' ? storedSetting.raw : '{}';
   }
 
   private async _resolveDynamicSettingRaw(pluginId: string): Promise<string> {
-    const storedRaw = this._readDynamicSettingRawFromStorage(pluginId);
-    if (storedRaw !== null) {
-      return storedRaw;
-    }
-
     const connector = this.settingRegistry.connector as {
       fetch(id: string): Promise<ISettingRegistry.IPlugin>;
     };
@@ -2321,29 +2517,18 @@ class PluginPlayground {
     } catch {
       // Keep default fallback when connector has no dynamic entry.
     }
+    const storedSetting = this._readStoredDynamicSetting(pluginId);
+    if (typeof storedSetting?.raw === 'string') {
+      return storedSetting.raw;
+    }
     return '{}';
   }
 
   private _writeDynamicSettingRaw(pluginId: string, raw: string): boolean {
-    if (typeof window === 'undefined') {
-      return false;
-    }
-
-    const storageKey = `${DYNAMIC_SETTINGS_STORAGE_KEY_PREFIX}${pluginId}`;
-    try {
-      window.localStorage.setItem(storageKey, raw);
-      return true;
-    } catch {
-      // Fall through to sessionStorage.
-    }
-
-    try {
-      window.sessionStorage.setItem(storageKey, raw);
-      return true;
-    } catch {
-      // No browser storage available.
-    }
-    return false;
+    const schema =
+      this._dynamicSettingPlugins.get(pluginId) ??
+      this._readStoredDynamicSetting(pluginId)?.schema;
+    return this._writeStoredDynamicSetting(pluginId, raw, schema);
   }
 
   private _refreshExtensionPoints(): void {
