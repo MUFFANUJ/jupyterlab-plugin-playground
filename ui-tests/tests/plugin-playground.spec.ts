@@ -1988,8 +1988,7 @@ test('persists dynamic plugin settings in browser storage', async ({
       (pluginId: string) => {
         const key = `plugin-playground:dynamic-settings:${pluginId}`;
         return (
-          window.localStorage.getItem(key) ??
-          window.sessionStorage.getItem(key)
+          window.localStorage.getItem(key) ?? window.sessionStorage.getItem(key)
         );
       },
       DYNAMIC_SETTINGS_PERSIST_TEST_PLUGIN_ID

@@ -2035,7 +2035,9 @@ class PluginPlayground {
         // - any refresh from the server might overwrite the data
         // - it is not a good long term solution in general
         const parsedSchema = JSON.parse(schema) as ISettingRegistry.ISchema;
-        const dynamicSettingRaw = await this._resolveDynamicSettingRaw(plugin.id);
+        const dynamicSettingRaw = await this._resolveDynamicSettingRaw(
+          plugin.id
+        );
         let dynamicSettingPlugin: ISettingRegistry.IPlugin;
         try {
           dynamicSettingPlugin = this._createDynamicSettingPlugin(
