@@ -1977,6 +1977,19 @@ class PluginPlayground {
       string,
       ISettingRegistry.IPlugin | undefined
     >();
+    const removedDynamicSettingStorageValues = new Map<
+      string,
+      { local: string | null; session: string | null }
+    >();
+    const removeDynamicSettingStorageValue = (storageKey: string): void => {
+      if (removedDynamicSettingStorageValues.has(storageKey)) {
+        return;
+      }
+      removedDynamicSettingStorageValues.set(
+        storageKey,
+        this._removeDynamicSettingStorageValue(storageKey)
+      );
+    };
     for (const plugin of plugins) {
       previousDynamicSettingSchemas.set(
         plugin.id,
@@ -2018,7 +2031,7 @@ class PluginPlayground {
           if (hadDynamicSettings || hadSettingsEntry) {
             changedDynamicSettingPluginIds.add(plugin.id);
             delete this.settingRegistry.plugins[plugin.id];
-            this._removeDynamicSettingStorageValue(
+            removeDynamicSettingStorageValue(
               `${DYNAMIC_SETTINGS_STORAGE_KEY_PREFIX}${plugin.id}`
             );
             (
@@ -2049,7 +2062,7 @@ class PluginPlayground {
           if (dynamicSettingRaw === '{}') {
             throw error;
           }
-          this._removeDynamicSettingStorageValue(
+          removeDynamicSettingStorageValue(
             `${DYNAMIC_SETTINGS_STORAGE_KEY_PREFIX}${plugin.id}`
           );
           dynamicSettingPlugin = this._createDynamicSettingPlugin(
@@ -2103,6 +2116,12 @@ class PluginPlayground {
         (
           this.settingRegistry.pluginChanged as Signal<ISettingRegistry, string>
         ).emit(pluginId);
+      }
+      for (const [
+        storageKey,
+        removedValue
+      ] of removedDynamicSettingStorageValues) {
+        this._restoreDynamicSettingStorageValue(storageKey, removedValue);
       }
       const message = error instanceof Error ? error.message : String(error);
       showErrorMessage('Plugin loading failed', message);
@@ -2522,21 +2541,55 @@ class PluginPlayground {
     return false;
   }
 
-  private _removeDynamicSettingStorageValue(storageKey: string): void {
+  private _removeDynamicSettingStorageValue(storageKey: string): {
+    local: string | null;
+    session: string | null;
+  } {
+    let local: string | null = null;
+    let session: string | null = null;
     if (typeof window === 'undefined') {
-      return;
+      return { local, session };
     }
 
     try {
+      local = window.localStorage.getItem(storageKey);
       window.localStorage.removeItem(storageKey);
     } catch {
       // Keep trying the fallback storage.
     }
 
     try {
+      session = window.sessionStorage.getItem(storageKey);
       window.sessionStorage.removeItem(storageKey);
     } catch {
       // Browser storage unavailable.
+    }
+
+    return { local, session };
+  }
+
+  private _restoreDynamicSettingStorageValue(
+    storageKey: string,
+    removedValue: { local: string | null; session: string | null }
+  ): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (removedValue.local !== null) {
+      try {
+        window.localStorage.setItem(storageKey, removedValue.local);
+      } catch {
+        // Keep trying the fallback storage.
+      }
+    }
+
+    if (removedValue.session !== null) {
+      try {
+        window.sessionStorage.setItem(storageKey, removedValue.session);
+      } catch {
+        // Browser storage unavailable.
+      }
     }
   }
 
