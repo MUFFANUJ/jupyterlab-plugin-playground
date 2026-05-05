@@ -2034,11 +2034,28 @@ class PluginPlayground {
         // - transforms are not applied
         // - any refresh from the server might overwrite the data
         // - it is not a good long term solution in general
-        const dynamicSettingPlugin = this._createDynamicSettingPlugin(
-          plugin.id,
-          JSON.parse(schema) as ISettingRegistry.ISchema,
-          await this._resolveDynamicSettingRaw(plugin.id)
-        );
+        const parsedSchema = JSON.parse(schema) as ISettingRegistry.ISchema;
+        const dynamicSettingRaw = await this._resolveDynamicSettingRaw(plugin.id);
+        let dynamicSettingPlugin: ISettingRegistry.IPlugin;
+        try {
+          dynamicSettingPlugin = this._createDynamicSettingPlugin(
+            plugin.id,
+            parsedSchema,
+            dynamicSettingRaw
+          );
+        } catch (error) {
+          if (dynamicSettingRaw === '{}') {
+            throw error;
+          }
+          this._removeDynamicSettingStorageValue(
+            `${DYNAMIC_SETTINGS_STORAGE_KEY_PREFIX}${plugin.id}`
+          );
+          dynamicSettingPlugin = this._createDynamicSettingPlugin(
+            plugin.id,
+            parsedSchema,
+            '{}'
+          );
+        }
         this._dynamicSettingPlugins.set(plugin.id, dynamicSettingPlugin.schema);
         this.settingRegistry.plugins[plugin.id] = dynamicSettingPlugin;
         changedDynamicSettingPluginIds.add(plugin.id);
